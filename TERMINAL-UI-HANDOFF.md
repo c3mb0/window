@@ -1,8 +1,8 @@
 # A web terminal that does not suck
 
-Status: PLAN ONLY. This is the current implementation handoff, replacing the
-broader UI-options survey in this file's history. No implementation is authorized
-in the planning session. The next session should implement this plan when asked.
+Status: IMPLEMENTED FIRST LOCAL VERSION. See README.md for the launcher and
+VERIFICATION.md for checked behavior and remaining hands-on acceptance. The
+original scope below is retained as the implementation contract.
 
 ## Product decision
 
@@ -215,5 +215,6 @@ LiveView diffing of terminal content. No second PTY owner in the frontend layer.
 - https://xtermjs.org/docs/guides/flowcontrol/
 - https://hexdocs.pm/phoenix/channels.html
 
-Repository setup contains only the existing MIT license and planning documents.
-No UI, runtime, dependency checkout/build wiring or palette implementation exists.
+Repository setup began with license and planning documents only. The application,
+submodule/build wiring and local theme snapshot are now implemented; current
+verification evidence is recorded in VERIFICATION.md.

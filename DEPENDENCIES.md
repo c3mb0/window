@@ -1,39 +1,28 @@
-# Backend dependency declaration
+# Dependencies and repository boundary
 
-Repository: git@github.com:c3mb0/play.git
-HTTPS equivalent: https://github.com/c3mb0/play.git
-Initial revision: **a04bbb62f21290e8372ec788991c1926b924e0c0**
-Local development checkout: /Users/cem/play/pty-lab
+Backend: https://github.com/c3mb0/play.git, complete Git submodule at `vendor/play`.
+Current pin: **3963c301a31147c68acbc316c3f387d2b6fd90ea**.
+Initial planning pin: a04bbb62f21290e8372ec788991c1926b924e0c0.
 
-This is a declared source pin, not an installed dependency or working build.
-There is currently no submodule, Mix dependency, copied backend or generated binary.
-The revision was read from the clean play checkout during window setup.
+The adopted revision adds an owner-bound, unrecorded interactive session API,
+resize/readback, output credits, early child-exit notification, and bounded
+shell/foreground-group hangup. Existing lab recording/deadlines remain separate.
+Shared changes were developed, checked, committed and pushed in play before this
+pin update. Its original tests and receipts remain in that repository.
 
-## Next-session wiring
+Mix uses `vendor/play/erlang/pty_lab` with rebar3. The launcher builds the external
+helper from that checkout with Cargo.lock. No backend source is copied into window,
+no company checkout is required, and there is no second PTY owner. Mix and npm
+lockfiles pin Phoenix, its transport dependencies, xterm.js and asset tooling.
 
-Use a Git submodule at vendor/play pinned to the revision above. It is a complete
-upstream repository reference, not selectively copied source. Configure the
-Phoenix application's local rebar dependency to vendor/play/erlang/pty_lab, with
-manager rebar3. Build the Rust helper from that same checkout and Cargo.lock;
-record/resolve its location rather than assuming a prebuilt binary exists.
+window owns Phoenix, TypeScript/CSS, tab lifecycle, local capability/origin policy,
+and the Signal theme adapter. play owns Erlang sessions and Rust Unix mechanisms.
+Future shared changes belong in play, followed by an explicit gitlink update here.
 
-The resulting .gitmodules and Git submodule entry are the actual dependency pin;
-update this document alongside them. A normal build must not depend on the
-operator's separate /Users/cem/play checkout. Do not add node-pty or a competing
-Rust PTY owner alongside the existing helper.
-
-## Shared changes
-
-The pinned lab version is not yet a complete personal-terminal backend. It still
-needs the interactive lifetime/recording policy support, live resize and suitable
-flow control described in TERMINAL-UI-HANDOFF.md. Do not claim those capabilities
-are implemented just because a dependency has been declared.
-
-Develop shared changes in play, retain its tests and evidence, commit/publish the
-change, then move window's submodule pin deliberately. Keep personal UI/session
-policy in window; common mechanism and API semantics stay in play. Preserve each
-repository's existing uncommitted work if the next session encounters any.
-
-Signal palette source: /Users/cem/ins_repo/signal. Its role values will be copied
-into a small local theme snapshot under the user's explicit authorization.
-Signal is not a runtime or Git-submodule dependency of window.
+`assets/src/theme.json` is the sole local palette snapshot. Its role values were
+checked against Signal's `signal.go`, `gruvbox.go` and `roles.go` at
+b8efbdf9c00cccc68b93884b7b942a64ebd369ee. Reuse is explicitly authorized by the owner.
+The ANSI mapping in `app.ts` is window's adapter: bright colors alias their base
+roles except brightBlack=dim; bold is independent of bright. 256-color/truecolor
+sequences remain application supplied. Signal is neither a build nor runtime
+dependency. No Signal source or shell configuration was modified.

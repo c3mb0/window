@@ -1,0 +1,1 @@
+{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","strict":true,"resolveJsonModule":true,"esModuleInterop":true,"lib":["ES2022","DOM"],"noEmit":true},"include":["src"]}
