@@ -43,3 +43,12 @@ are created. Existing shell-owned history is outside window's recording policy.
   another. The server rejects frames over 32 KiB. No hostile-client stress claim.
 - Dependency `phoenix_template` emits an Elixir-1.20 bitstring deprecation warning
   during its own compilation; window compiles with warnings-as-errors.
+
+## Bottom-row layout regression
+
+`node assets/layout-check.mjs` checks a running local server (`WINDOW_URL` override,
+4050 default) without a capability or shell. Install its browsers with
+`npx --prefix assets playwright install chromium firefox` first. Firefox and
+Chromium pass at six viewport sizes: the final row, screen and scroll viewport
+remain inside the fitted panel with at least 8 px below it. Panel spacing uses
+positioning insets because FitAddon does not subtract parent padding.
