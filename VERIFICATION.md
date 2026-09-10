@@ -62,3 +62,23 @@ Run `WINDOW_BROWSER=firefox WINDOW_REFRESH_ONLY=1 node assets/check.mjs` (omit
 WINDOW_BROWSER for Chromium). The broader Firefox run reached this check and the
 terminal/job-control checks, but its synthetic clipboard event did not deliver
 paste; that is not recorded as a native Firefox clipboard pass.
+
+## Idle browser connection regression
+
+The earlier 61-second test exercised the OTP worker, not a browser WebSocket.
+The original server inactivity limit and client heartbeat interval were both
+30 seconds, leaving no scheduling/round-trip margin. They are now 120 seconds
+and 10 seconds respectively.
+
+`WINDOW_BROWSER=firefox WINDOW_IDLE_ONLY=1 node assets/check.mjs` leaves two real
+shells idle for 125 seconds (one terminal hidden), watches for even transient
+failure labels, then checks each shell's distinct environment sentinel through
+new terminal input. This tests continued ownership, not replacement shells.
+
+A separate Firefox probe against the original running server reproduced the
+failure on three authenticated connections: WebSocket close code 1002 at
+30,008 / 30,014 / 30,017 ms with 30-second heartbeats. Bandit's timeout path emits
+that code. No shell sessions were created by this transport-only probe.
+
+Fixed Firefox run: PASS after the full 125 seconds. Both original shells returned
+their distinct sentinels and no disconnect/failure transition was observed.

@@ -73,7 +73,7 @@ class Tab {
     surface.append(this.pane);
     this.term.loadAddon(this.fit);
     this.term.open(this.pane);
-    this.socket = new Socket('/socket', {params: {token}, reconnectAfterMs: () => 86400000});
+    this.socket = new Socket('/socket', {params: {token}, heartbeatIntervalMs: 10000, reconnectAfterMs: () => 86400000});
     this.socket.onError(() => this.disconnect());
     this.socket.onClose(() => this.disconnect());
     this.term.onData(data => this.input(new TextEncoder().encode(data)));

@@ -2,7 +2,8 @@ defmodule Window.Endpoint do
   use Phoenix.Endpoint, otp_app: :window
 
   socket("/socket", Window.Socket,
-    websocket: [max_frame_size: 32_768, timeout: 30_000],
+    # Leave ample room beyond the browser heartbeat, including timer throttling.
+    websocket: [max_frame_size: 32_768, timeout: 120_000],
     longpoll: false
   )
 

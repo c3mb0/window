@@ -34,7 +34,32 @@ try {
   await page.reload();await waitText('WINDOW>');
   assert.equal(await page.getByRole('tab').count(),1);
   assert.ok(!await page.getByRole('tab').innerText().then(t=>t.includes('Missing startup token')));
-  if (process.env.WINDOW_REFRESH_ONLY === '1') {
+  if (process.env.WINDOW_IDLE_ONLY === '1') {
+    const idleMs = Number(process.env.WINDOW_IDLE_MS || 125000);
+    await page.getByRole('button',{name:'Open terminal'}).click();await waitText('WINDOW>');
+    for (const [name, value] of [['Terminal 1','first'],['Terminal 2','second']]) {
+      await page.getByRole('tab',{name,exact:true}).click();
+      await type(`WINDOW_IDLE_SENTINEL=${value}`);
+    }
+    // Leave both shells untouched. One terminal is hidden inside the page.
+    // Capture any transient disconnect, even if a later reconnect masks it.
+    await page.evaluate(() => {
+      window.idleFailures = [];
+      new MutationObserver(() => {
+        if (/Disconnected|failed|stopped/i.test(document.querySelector('#tabs').textContent))
+          window.idleFailures.push(document.querySelector('#tabs').textContent);
+      }).observe(document.querySelector('#tabs'), {subtree:true,childList:true,characterData:true});
+    });
+    console.log(`Waiting ${idleMs / 1000}s with two idle shells`);
+    await page.waitForTimeout(idleMs);
+    assert.deepEqual(await page.evaluate(() => window.idleFailures), []);
+    for (const [name, value] of [['Terminal 1','first'],['Terminal 2','second']]) {
+      await page.getByRole('tab',{name,exact:true}).click();
+      await type("printf 'IDLE_%s\\n' \"$WINDOW_IDLE_SENTINEL\"");await waitText(`IDLE_${value}`);
+    }
+    assert.deepEqual(errors,[]);
+    console.log('PASS: both original shells accept input after idle; no disconnect observed');
+  } else if (process.env.WINDOW_REFRESH_ONLY === '1') {
     console.log('PASS: shell access survives page refresh without a URL token');
   } else {
   await type("printf 'FIRST_%s\\n' OK");await waitText('FIRST_OK');

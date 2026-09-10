@@ -24,7 +24,9 @@ Closing the last tab leaves **+**. Cmd-C copies a selection; Ctrl-C goes to the
 terminal. Cmd-V uses native paste, including bracketed paste when enabled by the
 application. Option acts as Meta. Links remain text and are not opened automatically.
 
-Transport loss disables input and automatic reconnect. Existing sessions close
+Browser heartbeats run every 10 seconds; the server permits 120 seconds of
+silence so idle shells do not race the heartbeat timer. Transport loss disables
+input and automatic reconnect. Existing sessions close
 2 seconds after server-side owner loss; a dead connection may first need the
 WebSocket timeout to be detected. Refresh opens a fresh shell; it does not restore old sessions. After opening the
 launcher URL once, the capability is retained in tab-scoped session storage so
