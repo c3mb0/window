@@ -82,3 +82,15 @@ that code. No shell sessions were created by this transport-only probe.
 
 Fixed Firefox run: PASS after the full 125 seconds. Both original shells returned
 their distinct sentinels and no disconnect/failure transition was observed.
+
+## Unix clipboard shortcut wiring
+
+Ctrl-Shift-C/V explicitly invoke copy/paste; plain Ctrl-C always passes to xterm,
+including with a selection. Cmd-C/V remain available for macOS. Async paste checks
+that the session is still connected before delivering text through xterm.paste.
+
+`WINDOW_CLIPBOARD_ONLY=1 node assets/check.mjs` (also with WINDOW_BROWSER=firefox)
+uses real rendered selection and keyboard events, a controlled clipboard API,
+and a real foreground sleep job. It checks selected-text copy, a single paste,
+and Ctrl-C interrupt with text selected. Native Linux desktop clipboard permissions
+and compositor/browser-reserved shortcuts remain a separate hands-on check.

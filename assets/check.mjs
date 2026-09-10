@@ -19,6 +19,16 @@ try {
   browser=await (process.env.WINDOW_BROWSER === 'firefox' ? firefox : chromium).launch();
   const context=await browser.newContext({viewport:{width:1100,height:700}});
   const page=await context.newPage();
+  if (process.env.WINDOW_CLIPBOARD_ONLY === '1') {
+    await page.addInitScript(() => {
+      window.clipboardWrites = [];
+      window.clipboardReads = 0;
+      Object.defineProperty(navigator, 'clipboard', {value: {
+        writeText: async text => window.clipboardWrites.push(text),
+        readText: async () => {window.clipboardReads++; return "printf 'PASTE_%s\\n' OK";}
+      }});
+    });
+  }
   let observedSize;
   page.on('websocket', ws => ws.on('framereceived', ({payload}) => {
     try {const frame=JSON.parse(String(payload));if(frame[3]==='resized') observedSize=frame[4];} catch {}
@@ -34,7 +44,22 @@ try {
   await page.reload();await waitText('WINDOW>');
   assert.equal(await page.getByRole('tab').count(),1);
   assert.ok(!await page.getByRole('tab').innerText().then(t=>t.includes('Missing startup token')));
-  if (process.env.WINDOW_IDLE_ONLY === '1') {
+  if (process.env.WINDOW_CLIPBOARD_ONLY === '1') {
+    await type("printf 'COPY_%s\\n' TARGET");await waitText('COPY_TARGET');
+    await page.getByText('COPY_TARGET',{exact:true}).dblclick();
+    await page.keyboard.press('Control+Shift+c');
+    assert.deepEqual(await page.evaluate(()=>window.clipboardWrites), ['COPY_TARGET']);
+    await page.locator('section:not([hidden]) textarea').focus();
+    await page.keyboard.press('Control+Shift+v');await page.keyboard.press('Enter');await waitText('PASTE_OK');
+    assert.equal(await page.evaluate(()=>window.clipboardReads), 1);
+    await type('sh -c "printf \'JOB_%s\\n\' READY; exec sleep 30"');await waitText('JOB_READY');
+    await page.getByText('COPY_TARGET',{exact:true}).dblclick();
+    await page.keyboard.press('Control+c');
+    await type("printf 'INTERRUPT_%s\\n' OK");await waitText('INTERRUPT_OK');
+    assert.equal(await page.evaluate(()=>window.clipboardWrites.length), 1);
+    assert.deepEqual(errors, []);
+    console.log('PASS: Ctrl-Shift-C copies selection, Ctrl-Shift-V pastes once, selected Ctrl-C interrupts the real foreground job');
+  } else if (process.env.WINDOW_IDLE_ONLY === '1') {
     const idleMs = Number(process.env.WINDOW_IDLE_MS || 125000);
     await page.getByRole('button',{name:'Open terminal'}).click();await waitText('WINDOW>');
     for (const [name, value] of [['Terminal 1','first'],['Terminal 2','second']]) {

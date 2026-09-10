@@ -79,12 +79,29 @@ class Tab {
     this.term.onData(data => this.input(new TextEncoder().encode(data)));
     this.term.onBinary(data => this.input(Uint8Array.from(data, c => c.charCodeAt(0) & 255)));
     this.term.attachCustomKeyEventHandler(e => {
-      if (e.metaKey && e.key.toLowerCase() === 'c' && this.term.hasSelection()) {
-        if (e.type === 'keydown') navigator.clipboard.writeText(this.term.getSelection()).catch(() => {});
+      const key = e.key.toLowerCase();
+      const unixClipboard = e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey;
+      const macClipboard = e.metaKey && !e.ctrlKey && !e.altKey;
+      if ((unixClipboard || macClipboard) && key === 'c') {
+        e.preventDefault();
+        if (e.type === 'keydown' && this.term.hasSelection()) {
+          navigator.clipboard.writeText(this.term.getSelection())
+            .catch(() => this.state('Clipboard copy denied'));
+        }
         return false;
       }
-      // Let native paste deliver the clipboard once through xterm's paste handler.
-      if (e.metaKey && e.key.toLowerCase() === 'v') return false;
+      if (unixClipboard && key === 'v') {
+        e.preventDefault();
+        if (e.type === 'keydown' && this.connected) {
+          navigator.clipboard.readText().then(text => {
+            if (!this.disposed && this.connected) this.term.paste(text);
+          }).catch(() => this.state('Clipboard paste denied'));
+        }
+        return false;
+      }
+      // Cmd-V uses the native paste event. Ctrl-Shift-V is handled above once.
+      if (macClipboard && key === 'v') return false;
+      // Plain Ctrl-C always reaches xterm, even with a selection.
       return true;
     });
   }

@@ -20,9 +20,11 @@ scrollback is limited to 5,000 lines per tab. Assets and fonts stay local (syste
 monospace fallback; no bundled font).
 
 Switching tabs retains each screen and shell. An exited shell keeps its screen.
-Closing the last tab leaves **+**. Cmd-C copies a selection; Ctrl-C goes to the
-terminal. Cmd-V uses native paste, including bracketed paste when enabled by the
-application. Option acts as Meta. Links remain text and are not opened automatically.
+Closing the last tab leaves **+**. Ctrl-C always goes to the terminal, including
+when text is selected. Copy/paste use Cmd-C/V on macOS and Ctrl-Shift-C/V on Linux.
+Ctrl-Shift-V reads the browser clipboard and uses xterm paste; Cmd-V uses native
+paste. Both preserve bracketed paste when enabled by the application. Clipboard
+permission failures appear in the tab label. Option acts as Meta. Links remain text and are not opened automatically.
 
 Browser heartbeats run every 10 seconds; the server permits 120 seconds of
 silence so idle shells do not race the heartbeat timer. Transport loss disables
