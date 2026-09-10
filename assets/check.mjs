@@ -1,4 +1,4 @@
-import { chromium } from '@playwright/test';
+import { chromium, firefox } from '@playwright/test';
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,7 +16,7 @@ try {
     server.stdout.on('data',b=>{output+=b;const m=output.match(/http:\/\/127\.0\.0\.1:4051\/#token=[\w-]+/);if(m){clearTimeout(timer);resolve(m[0]);}});
     server.on('exit',code=>{clearTimeout(timer);reject(new Error(`Server exited ${code}`));});
   });
-  browser=await chromium.launch();
+  browser=await (process.env.WINDOW_BROWSER === 'firefox' ? firefox : chromium).launch();
   const context=await browser.newContext({viewport:{width:1100,height:700}});
   const page=await context.newPage();
   let observedSize;
@@ -30,6 +30,13 @@ try {
   const type=async(cmd)=>{await page.locator('section:not([hidden]) textarea').focus();await page.keyboard.type(cmd);await page.keyboard.press('Enter');};
   await waitText('WINDOW>');
   assert.equal(await page.getByRole('tab').count(),1);
+  assert.equal(new URL(page.url()).hash, '');
+  await page.reload();await waitText('WINDOW>');
+  assert.equal(await page.getByRole('tab').count(),1);
+  assert.ok(!await page.getByRole('tab').innerText().then(t=>t.includes('Missing startup token')));
+  if (process.env.WINDOW_REFRESH_ONLY === '1') {
+    console.log('PASS: shell access survives page refresh without a URL token');
+  } else {
   await type("printf 'FIRST_%s\\n' OK");await waitText('FIRST_OK');
   await page.getByRole('button',{name:'Open terminal'}).click();await waitText('WINDOW>');
   await type("printf 'SECOND_%s\\n' OK");await waitText('SECOND_OK');
@@ -74,6 +81,7 @@ try {
   assert.match(await page.getByRole('tab').innerText(),/Disconnected/);
   assert.deepEqual(errors,[]);
   console.log('PASS: real-shell tabs, retained screens, hidden flood, split UTF-8/ANSI, resize, Ctrl-Z/fg/Ctrl-C, exit, final close, disconnect without reconnect');
+  }
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

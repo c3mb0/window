@@ -52,3 +52,13 @@ are created. Existing shell-owned history is outside window's recording policy.
 Chromium pass at six viewport sizes: the final row, screen and scroll viewport
 remain inside the fitted panel with at least 8 px below it. Panel spacing uses
 positioning insets because FitAddon does not subtract parent padding.
+
+## Refresh access regression
+
+After opening the capability URL, Firefox and Chromium both open a fresh shell
+on reload after the URL fragment has been removed. The capability is retained
+in sessionStorage for that browser tab; shell sessions themselves are not resumed.
+Run `WINDOW_BROWSER=firefox WINDOW_REFRESH_ONLY=1 node assets/check.mjs` (omit
+WINDOW_BROWSER for Chromium). The broader Firefox run reached this check and the
+terminal/job-control checks, but its synthetic clipboard event did not deliver
+paste; that is not recorded as a native Firefox clipboard pass.

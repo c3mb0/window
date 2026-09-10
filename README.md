@@ -26,9 +26,11 @@ application. Option acts as Meta. Links remain text and are not opened automatic
 
 Transport loss disables input and automatic reconnect. Existing sessions close
 2 seconds after server-side owner loss; a dead connection may first need the
-WebSocket timeout to be detected. Refresh does not restore sessions or the token:
-reopen the launcher URL for a new page. The token stays in page memory and is
-removed from browser history; it changes when the server restarts.
+WebSocket timeout to be detected. Refresh opens a fresh shell; it does not restore old sessions. After opening the
+launcher URL once, the capability is retained in tab-scoped session storage so
+refresh keeps access. It is removed from the URL and changes when the server
+restarts. Open the new launcher URL after a server restart or in a new browser tab.
+If browser storage is unavailable, the URL fragment is retained instead.
 
 Closing sends terminal hangup to the owned shell group and current foreground
 job group, closes the PTY, then escalates those groups after 150 ms. This is **not

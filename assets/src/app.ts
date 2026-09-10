@@ -17,9 +17,19 @@ const theme = {
 const tabstrip = document.querySelector<HTMLDivElement>('#tabs')!;
 const surface = document.querySelector<HTMLElement>('#terminals')!;
 const add = document.querySelector<HTMLButtonElement>('#new')!;
-const token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
-// Keep the startup capability in this page's memory only, out of history/storage.
-history.replaceState(null, '', location.pathname);
+const suppliedToken = new URLSearchParams(location.hash.slice(1)).get('token');
+const token = (() => {
+  try {
+    if (suppliedToken) sessionStorage.setItem('window.startupToken', suppliedToken);
+    const saved = sessionStorage.getItem('window.startupToken') || '';
+    // Tab-scoped storage survives refresh; the capability stays out of URL history.
+    history.replaceState(null, '', location.pathname);
+    return saved;
+  } catch {
+    // If storage is unavailable, retain the fragment so refresh still works.
+    return suppliedToken || '';
+  }
+})();
 const tabs: Tab[] = [];
 let active: Tab | undefined;
 let ordinal = 0;
