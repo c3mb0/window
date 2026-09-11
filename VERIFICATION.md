@@ -94,3 +94,16 @@ uses real rendered selection and keyboard events, a controlled clipboard API,
 and a real foreground sleep job. It checks selected-text copy, a single paste,
 and Ctrl-C interrupt with text selected. Native Linux desktop clipboard permissions
 and compositor/browser-reserved shortcuts remain a separate hands-on check.
+
+## Shift-Enter forwarding
+
+Shift-Enter sends CSI-u `ESC [ 13 ; 2 u` once per keydown through the normal input
+queue. Plain Enter remains CR; other modifier combinations retain xterm behavior.
+
+`WINDOW_OPEN_BROWSER=0 WINDOW_KEYS_ONLY=1 node assets/check.mjs` (also with
+`WINDOW_BROWSER=firefox`) passed in Chromium and Firefox. The check reads actual
+raw PTY bytes for Shift-Enter followed by Enter, verifies
+`1b 5b 31 33 3b 32 75 0d`, and confirms the shell remains usable afterward.
+This verifies browser-to-PTY forwarding; the live Codex composer remains a manual
+acceptance check. Reloading window replaces its shell sessions, so this check
+does not refresh an existing user session.

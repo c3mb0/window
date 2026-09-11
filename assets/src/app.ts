@@ -80,6 +80,12 @@ class Tab {
     this.term.onBinary(data => this.input(Uint8Array.from(data, c => c.charCodeAt(0) & 255)));
     this.term.attachCustomKeyEventHandler(e => {
       const key = e.key.toLowerCase();
+      if (key === 'enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        // CSI-u preserves Shift+Enter for Codex instead of xterm's plain CR.
+        if (e.type === 'keydown') this.input(new TextEncoder().encode('\x1b[13;2u'));
+        return false;
+      }
       const unixClipboard = e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey;
       const macClipboard = e.metaKey && !e.ctrlKey && !e.altKey;
       if ((unixClipboard || macClipboard) && key === 'c') {

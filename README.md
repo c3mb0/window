@@ -29,6 +29,8 @@ when text is selected. Copy/paste use Cmd-C/V on macOS and Ctrl-Shift-C/V on Lin
 Ctrl-Shift-V reads the browser clipboard and uses xterm paste; Cmd-V uses native
 paste. Both preserve bracketed paste when enabled by the application. Clipboard
 permission failures appear in the tab label. Option acts as Meta. Links remain text and are not opened automatically.
+Shift-Enter sends the distinct CSI-u key sequence for a newline in Codex's
+composer; plain Enter keeps its normal submit behavior.
 
 Browser heartbeats run every 10 seconds; the server permits 120 seconds of
 silence so idle shells do not race the heartbeat timer. Transport loss disables

@@ -44,7 +44,19 @@ try {
   await page.reload();await waitText('WINDOW>');
   assert.equal(await page.getByRole('tab').count(),1);
   assert.ok(!await page.getByRole('tab').innerText().then(t=>t.includes('Missing startup token')));
-  if (process.env.WINDOW_CLIPBOARD_ONLY === '1') {
+  if (process.env.WINDOW_KEYS_ONLY === '1') {
+    // Observe actual PTY bytes, including duplicate keypress/keyup delivery.
+    await type("stty raw -echo; printf 'KEY_%s\\n' READY; dd bs=1 count=8 2>/dev/null | od -An -tx1; stty sane");
+    await waitText('KEY_READY');
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() =>
+      /1b\s+5b\s+31\s+33\s+3b\s+32\s+75\s+0d/.test(
+        document.querySelector('section:not([hidden]) .xterm-screen')?.textContent || ''));
+    await type("printf 'AFTER_%s\\n' KEYS");await waitText('AFTER_KEYS');
+    assert.deepEqual(errors, []);
+    console.log('PASS: Shift+Enter sends CSI-u once, plain Enter sends CR, shell remains usable');
+  } else if (process.env.WINDOW_CLIPBOARD_ONLY === '1') {
     await type("printf 'COPY_%s\\n' TARGET");await waitText('COPY_TARGET');
     await page.getByText('COPY_TARGET',{exact:true}).dblclick();
     await page.keyboard.press('Control+Shift+c');
