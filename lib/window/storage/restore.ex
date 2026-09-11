@@ -24,10 +24,12 @@ defmodule Window.Storage.Restore do
         if expected != actual, do: raise("Backup checksum mismatch: #{name}")
         File.cp!(file, Path.join(staging, name))
 
-        if Backup.fingerprint(Path.join(staging, name)) != Backup.fingerprint(file),
-          do: raise("Restore copy mismatch")
+        if Backup.fingerprint(Path.join(staging, name)) |> Jason.encode!() |> Jason.decode!() !=
+             expected,
+           do: raise("Restore copy mismatch")
       end
 
+      verify_snapshot!(staging, manifest)
       recover!(staging, manifest, helper)
 
       Backup.write_sync!(
@@ -43,6 +45,25 @@ defmodule Window.Storage.Restore do
       error ->
         File.rm_rf(staging)
         reraise error, __STACKTRACE__
+    end
+  end
+
+  defp verify_snapshot!(directory, manifest) do
+    {:ok, db} = Exqlite.Sqlite3.open(Path.join(directory, "current.sqlite"))
+
+    try do
+      [[1]] = Database.query!(db, "PRAGMA user_version")
+      [["ok"]] = Database.query!(db, "PRAGMA quick_check")
+
+      order =
+        case Database.query!(db, "SELECT seq FROM sqlite_sequence WHERE name = 'outbox'") do
+          [[seq]] -> seq
+          [] -> 0
+        end
+
+      if order != manifest["commit_watermark"], do: raise("Backup watermark mismatch")
+    after
+      Database.close(db)
     end
   end
 
@@ -68,17 +89,14 @@ defmodule Window.Storage.Restore do
         )
 
       try do
+        {:ok, %{"commit_order" => order}} =
+          Archive.request(%{op: "watermark"}, __MODULE__.Archive)
+
+        if order > manifest["commit_watermark"], do: raise("Archive is ahead of paired snapshot")
         drain_all!()
-        {:ok, sessions} = SessionStore.request(:list, __MODULE__.Store)
-
-        for state <- sessions do
-          {:ok, %{"events" => [latest | _]}} =
-            Archive.request(%{op: "timeline", session_id: state["id"]}, __MODULE__.Archive)
-
-          if Jason.decode!(latest["payload"]) != state,
-            do: raise("Restored latest state does not match archive")
-        end
-
+        {:ok, _} = SessionStore.request(:reconcile, __MODULE__.Store)
+        drain_all!()
+        verify_latest!("")
         # Close and checkpoint both owners before exposing the destination.
         {:ok, _} = Archive.shutdown(__MODULE__.Archive)
       after
@@ -87,6 +105,20 @@ defmodule Window.Storage.Restore do
     after
       GenServer.stop(store)
     end
+  end
+
+  defp verify_latest!(cursor) do
+    {:ok, sessions} = SessionStore.request({:list_after, cursor}, __MODULE__.Store)
+
+    for state <- sessions do
+      {:ok, %{"events" => [latest | _]}} =
+        Archive.request(%{op: "timeline", session_id: state["id"]}, __MODULE__.Archive)
+
+      if Jason.decode!(latest["payload"]) != state,
+        do: raise("Restored latest state does not match archive")
+    end
+
+    if sessions != [], do: verify_latest!(List.last(sessions)["id"])
   end
 
   defp drain_all! do

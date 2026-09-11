@@ -152,3 +152,20 @@ Final `make check` PASS: formatting, warnings-as-errors compilation, all7ExUnit
 checks (including61second session lifetime), TypeScript checking and asset build.
 Shell syntax and Python compilation passed. Final process inventory found no
 BEAM or pty_helper processes. Window was left stopped for the operator's retry.
+
+## Metadata persistence — 2026-09-11
+
+SQLite current state, transactional outbox, isolated DuckDB history, session shelf,
+and paired backup/restore are implemented. The storage receipt maps every planned
+gate to evidence: [STORAGE-IMPLEMENTATION.md](STORAGE-IMPLEMENTATION.md).
+
+`make check` passes with 19 tests (12 storage, 7 terminal/channel), native archive
+fmt/clippy and TypeScript/assets. Real commit-boundary process kills, actual SQLite
+busy/full failures, archive loss/restart, bounded admissions, paused backup and
+restored outbox replay pass. Chromium and Firefox shelf/refresh checks pass.
+Archive and SQLite outages remain visible while terminal input/close work.
+
+The recorded echo pair measured p95 23.90 ms with storage disabled and 23.94 ms
+under concurrent archive load (40 samples each, 239 archive events confirmed).
+These local measurements do not claim an improvement or a general performance
+bound. The user runtime was not restarted; hands-on acceptance remains separate.

@@ -46,40 +46,51 @@ defmodule Window.Archive do
     {:reply, :ok, %{state | port: nil}}
   end
 
-  def handle_call({:snapshot, destination}, from, state) do
+  def handle_call({:snapshot, destination}, _, state) do
     # Keep ownership serialized through shutdown, OS-process exit, and file copy.
-    # The nested handler releases the single admitted slot.
-    case handle_call({:request, %{op: "shutdown"}}, from, state) do
-      {:reply, {:ok, _}, next} ->
-        port = next.port
+    try do
+      case exchange(%{op: "shutdown"}, state) do
+        {:reply, {:ok, _}, next} ->
+          port = next.port
 
-        result =
-          receive do
-            {^port, {:exit_status, 0}} ->
-              if(destination, do: File.cp(state.file, destination), else: :ok)
+          result =
+            receive do
+              {^port, {:exit_status, 0}} ->
+                if(destination, do: File.cp(state.file, destination), else: :ok)
 
-            {^port, {:exit_status, _}} ->
-              {:error, "archive shutdown failed"}
-          after
-            10_000 ->
-              close(port)
-              {:error, "archive shutdown timed out"}
-          end
+              {^port, {:exit_status, _}} ->
+                {:error, "archive shutdown failed"}
+            after
+              10_000 ->
+                close(port)
+                {:error, "archive shutdown timed out"}
+            end
 
-        reply =
-          case result do
-            :ok -> {:ok, destination}
-            {:error, reason} -> {:error, to_string(reason)}
-          end
+          reply =
+            case result do
+              :ok -> {:ok, destination}
+              {:error, reason} -> {:error, to_string(reason)}
+            end
 
-        {:reply, reply, %{next | port: nil}}
+          {:reply, reply, %{next | port: nil}}
 
-      other ->
-        other
+        other ->
+          other
+      end
+    after
+      Admission.release(state.name)
     end
   end
 
   def handle_call({:request, request}, _, state) do
+    try do
+      exchange(request, state)
+    after
+      Admission.release(state.name)
+    end
+  end
+
+  defp exchange(request, state) do
     try do
       data = Jason.encode!(request)
       if byte_size(data) > 4_194_304, do: raise("archive request exceeds 4 MiB")
@@ -121,8 +132,6 @@ defmodule Window.Archive do
       error ->
         close(state.port)
         {:reply, {:error, Exception.message(error)}, %{state | port: nil}}
-    after
-      Admission.release(state.name)
     end
   end
 

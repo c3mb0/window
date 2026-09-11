@@ -49,7 +49,10 @@ defmodule Window.Storage.Backup do
         end
 
       DB.execute!(state.db, "VACUUM INTO ?", [Path.join(destination, "current.sqlite")])
+      if hook = Application.get_env(:window, :backup_fault_hook), do: hook.()
       {:ok, _} = Archive.snapshot(Path.join(destination, "history.duckdb"), archive)
+
+      for name <- ["current.sqlite", "history.duckdb"], do: sync!(Path.join(destination, name))
 
       files =
         for name <- ["current.sqlite", "history.duckdb"],
@@ -77,15 +80,6 @@ defmodule Window.Storage.Backup do
   end
 
   def fingerprint(file) do
-    # Sync copied data before publishing a manifest, hash with bounded memory.
-    {:ok, io} = :file.open(String.to_charlist(file), [:read, :write, :raw, :binary])
-
-    try do
-      :ok = :file.sync(io)
-    after
-      :file.close(io)
-    end
-
     digest =
       file
       |> File.stream!(65_536)
@@ -94,6 +88,16 @@ defmodule Window.Storage.Backup do
       |> Base.encode16(case: :lower)
 
     %{bytes: File.stat!(file).size, sha256: digest}
+  end
+
+  def sync!(file) do
+    {:ok, io} = :file.open(String.to_charlist(file), [:read, :write, :raw, :binary])
+
+    try do
+      :ok = :file.sync(io)
+    after
+      :file.close(io)
+    end
   end
 
   def write_sync!(file, data) do

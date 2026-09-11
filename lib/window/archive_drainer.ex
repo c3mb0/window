@@ -6,24 +6,25 @@ defmodule Window.ArchiveDrainer do
     do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
 
   def init(opts) do
-    send(self(), :drain)
-
     {:ok,
-     %{
-       store: Keyword.get(opts, :store, SessionStore),
-       archive: Keyword.get(opts, :archive, Archive),
-       backoff: 250,
-       paused: false,
-       timer: nil,
-       pause_owner: nil
-     }}
+     schedule(
+       %{
+         store: Keyword.get(opts, :store, SessionStore),
+         archive: Keyword.get(opts, :archive, Archive),
+         backoff: 250,
+         paused: false,
+         timer: nil,
+         pause_owner: nil
+       },
+       0
+     )}
   end
 
   def pause(server \\ __MODULE__), do: GenServer.call(server, :pause, 30_000)
   def resume(server \\ __MODULE__), do: GenServer.call(server, :resume)
 
   def handle_call(:pause, {pid, _}, %{paused: false} = state) do
-    if state.timer, do: Process.cancel_timer(state.timer)
+    if state.timer, do: Process.cancel_timer(elem(state.timer, 0))
     {:reply, :ok, %{state | paused: true, timer: nil, pause_owner: Process.monitor(pid)}}
   end
 
@@ -31,18 +32,14 @@ defmodule Window.ArchiveDrainer do
 
   def handle_call(:resume, _, state) do
     if state.pause_owner, do: Process.demonitor(state.pause_owner, [:flush])
-    send(self(), :drain)
-    {:reply, :ok, %{state | paused: false, pause_owner: nil}}
+    {:reply, :ok, schedule(%{state | paused: false, pause_owner: nil}, 0)}
   end
 
   def handle_info({:DOWN, ref, :process, _, _}, %{pause_owner: ref} = state) do
-    send(self(), :drain)
-    {:noreply, %{state | paused: false, pause_owner: nil}}
+    {:noreply, schedule(%{state | paused: false, pause_owner: nil}, 0)}
   end
 
-  def handle_info(:drain, %{paused: true} = state), do: {:noreply, state}
-
-  def handle_info(:drain, state) do
+  def handle_info({:drain, token}, %{paused: false, timer: {_, token}} = state) do
     result = drain(state.store, state.archive)
 
     backoff =
@@ -55,8 +52,15 @@ defmodule Window.ArchiveDrainer do
           min(state.backoff * 2, 10_000)
       end
 
-    timer = Process.send_after(self(), :drain, backoff)
-    {:noreply, %{state | backoff: backoff, timer: timer}}
+    {:noreply, schedule(%{state | backoff: backoff}, backoff)}
+  end
+
+  def handle_info(_, state), do: {:noreply, state}
+
+  defp schedule(state, delay) do
+    token = make_ref()
+    timer = Process.send_after(self(), {:drain, token}, delay)
+    %{state | timer: {timer, token}}
   end
 
   def drain(store, archive) do

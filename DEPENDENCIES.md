@@ -37,3 +37,23 @@ dependency. No Signal source or shell configuration was modified.
 The current pin corrects interactive teardown to kill every discovered process
 group in the owned PTY session, including background jobs, without a HUP grace.
 This does not contain processes that deliberately daemonize into another session.
+
+## Window-owned metadata storage
+
+SQLite uses `exqlite == 0.40.0`, pinned with its native-build/runtime dependencies
+in `mix.lock`. DuckDB runs in `native/archive` as an isolated Rust Port process:
+`duckdb = 1.10505.0` maps to upstream DuckDB **1.5.5**, with the full Rust dependency
+graph in `native/archive/Cargo.lock`. It is not part of play.
+
+`scripts/build-archive` sets `DUCKDB_DOWNLOAD_LIB=1` and uses the binding's download
+support for the matching upstream native library. The macOS arm64 build downloads
+`libduckdb-osx-universal.zip` from the DuckDB v1.5.5 release; the loader searches
+beside the executable and its `deps` directory. Keep the executable and downloaded
+library together. First build needs network access; subsequent locked builds use
+the local cache. No system DuckDB installation is required.
+
+The official prebuilt library avoids a multi-gigabyte local C++ debug build.
+`build.rs` supplies loader-relative paths for macOS and Linux. The current runtime
+and tests use the debug profile; portability outside the tested macOS arm64 host
+is not claimed. Sources: https://github.com/duckdb/duckdb-rs and
+https://github.com/duckdb/duckdb/releases/tag/v1.5.5.

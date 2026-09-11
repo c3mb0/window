@@ -127,6 +127,7 @@ defmodule Window.Storage.Database do
             "runtime_id" => runtime,
             "revision" => old["revision"] + 1,
             "updated_at" => now,
+            "previous_event_id" => old["last_event_id"],
             "last_event_id" => event_id
           })
 
@@ -178,6 +179,15 @@ defmodule Window.Storage.Database do
       "SELECT commit_order, id, session_id, revision, kind, observed_at, schema_version, payload, digest FROM outbox ORDER BY commit_order LIMIT 250"
     )
     |> Enum.map(&Map.new(Enum.zip(keys, &1)))
+    |> Enum.reduce_while({[], 0}, fn event, {events, bytes} ->
+      size = byte_size(Jason.encode!(event)) + 1
+      # JSON escaping can expand payloads; reserve room inside the 4 MiB frame.
+      if bytes + size <= 3_900_000,
+        do: {:cont, {[event | events], bytes + size}},
+        else: {:halt, {events, bytes}}
+    end)
+    |> elem(0)
+    |> Enum.reverse()
   end
 
   def acknowledge!(db, ids) do

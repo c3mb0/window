@@ -137,6 +137,23 @@ defmodule Window.SessionStore do
   defp perform({:backup, archive}, state),
     do: {Window.Storage.Backup.snapshot!(state, archive), state}
 
+  defp perform(:reconcile, state) do
+    next = reconcile(state)
+    if next.error, do: raise(next.error)
+    {%{}, next}
+  end
+
+  defp perform({:list_after, id}, state) do
+    rows =
+      Database.query!(
+        state.db,
+        "SELECT payload FROM sessions WHERE id > ? ORDER BY id LIMIT 250",
+        [id]
+      )
+
+    {Enum.map(rows, fn [payload] -> Jason.decode!(payload) end), state}
+  end
+
   defp perform(:list, state) do
     rows =
       Database.query!(

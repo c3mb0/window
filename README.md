@@ -93,3 +93,46 @@ Observed local cleanup was approximately0.1seconds; the regression ceiling is
 2seconds. This is not literal zero-time termination, remote-service cancellation,
 or containment of a program deliberately escaping into another daemon session.
 The browser itself is not owned by this launcher and is not killed.
+
+## Session shelf and storage
+
+**Sessions** opens the saved session shelf. Select a session to inspect its
+lifecycle timeline, rename it, or focus its terminal on this page when the server
+confirms it is live. The displayed directory is the launch directory; shell `cd`
+commands are not tracked. Stored state is **last observed**. Restarting the server
+marks prior live-looking records interrupted; it never recreates their processes.
+
+SQLite holds current metadata and pending events; DuckDB holds immutable lifecycle
+history. No keystrokes, terminal output, environment variables, startup tokens, or
+conversation content go into these databases. Existing browser screen snapshots
+remain separate. File sizes, pending events, archive errors, free disk space, and
+unrecorded-observation counters are available under **Storage status**. Refresh
+that view for a new sample; free space is sampled every 30 seconds.
+
+Data defaults to the OS user-data directory (`~/Library/Application Support/window`
+on macOS). Set `WINDOW_DATA_DIR` to an absolute local directory outside this
+checkout and browser assets. Only one window server should use that directory.
+`WINDOW_STORAGE=0` disables metadata persistence. The default pending-event cap is
+64 MiB; `WINDOW_OUTBOX_LIMIT_BYTES` changes it. At capacity, new metadata saves
+fail visibly while terminal input and close remain available. Already committed
+events are retained; history is never pruned automatically.
+
+**Create backup** writes a paired snapshot under `<data>/backups/`. A successful
+backup has `current.sqlite`, `history.duckdb`, and a checksummed `manifest.json`.
+Terminal input continues during the copy. Metadata observations wait in a bounded
+queue; overflow is counted, not described as durable. A timeout is an unconfirmed
+result: inspect the generated directories for a complete manifest before retrying.
+
+Restore into a **new, nonexistent** directory:
+
+```sh
+./scripts/restore-storage /absolute/path/to/backup /absolute/path/to/new-data
+WINDOW_DATA_DIR=/absolute/path/to/new-data make terminal
+```
+
+Restore verifies both file hashes and their shared archive identity, drains pending
+events idempotently, reconciles prior runtime state, and checks latest rows against
+history before exposing the new directory. Stop the old server before launching
+with restored data. Restore does not execute a shell command or resume Codex.
+Keep both files together; substituting an empty archive is rejected once bound.
+See [storage contract](STORAGE-PLAN.md) and [implementation receipt](STORAGE-IMPLEMENTATION.md).

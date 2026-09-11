@@ -1,6 +1,7 @@
 defmodule Window.Socket do
   use Phoenix.Socket
   channel("terminal:*", Window.TerminalChannel)
+  channel("shelf", Window.ShelfChannel)
 
   def connect(%{"token" => token}, socket, _) when is_binary(token) do
     expected = Application.get_env(:window, :token, "")

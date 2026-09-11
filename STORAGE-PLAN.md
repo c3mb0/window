@@ -1,7 +1,7 @@
 # SQLite current state + DuckDB append-only history
 
-Status: implementing. Grounded in window at `c9f6cd6`. See
-`STORAGE-IMPLEMENTATION.md` for completed gates and remaining work.
+Status: implemented and automatically verified. Grounded in window at `c9f6cd6`.
+See `STORAGE-IMPLEMENTATION.md` for gate evidence and manual acceptance limits.
 
 ## Outcome and first slice
 

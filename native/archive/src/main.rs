@@ -47,6 +47,12 @@ fn request(conn: &mut Connection, value: Value) -> Result<Value, Box<dyn std::er
                 if event.schema_version != 1 {
                     return Err("unsupported event schema".into());
                 }
+                let digest: String =
+                    transaction
+                        .query_row("SELECT sha256(?)", params![event.payload], |row| row.get(0))?;
+                if digest != event.digest {
+                    return Err("payload digest mismatch".into());
+                }
                 let mut statement = transaction.prepare("SELECT session_id, revision, commit_order, kind, observed_at, schema_version, payload, digest FROM session_events WHERE id = ?")?;
                 let mut rows = statement.query(params![event.id])?;
                 if let Some(row) = rows.next()? {
@@ -98,6 +104,9 @@ fn request(conn: &mut Connection, value: Value) -> Result<Value, Box<dyn std::er
             let rows = statement.query_map(params![id], |row| Ok(json!({"id": row.get::<_, String>(0)?, "revision": row.get::<_, i64>(1)?, "kind": row.get::<_, String>(2)?, "observed_at": row.get::<_, i64>(3)?, "payload": row.get::<_, String>(4)?})))?;
             Ok(json!({"events": rows.collect::<Result<Vec<_>, _>>()?}))
         }
+        "watermark" => Ok(
+            json!({"commit_order": conn.query_row("SELECT coalesce(max(commit_order), 0) FROM session_events", [], |r| r.get::<_, i64>(0))?}),
+        ),
         "status" => Ok(
             json!({"events": conn.query_row("SELECT count(*) FROM session_events", [], |r| r.get::<_, i64>(0))?}),
         ),
@@ -135,8 +144,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let mut bytes = vec![0; size];
         input.read_exact(&mut bytes)?;
-        let shutdown = serde_json::from_slice::<Value>(&bytes)
-            .is_ok_and(|value| value["op"] == "shutdown");
+        let shutdown =
+            serde_json::from_slice::<Value>(&bytes).is_ok_and(|value| value["op"] == "shutdown");
         let result = serde_json::from_slice(&bytes)
             .map_err(|e| e.into())
             .and_then(|value| request(&mut conn, value));
@@ -149,7 +158,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output.write_all(&(response.len() as u32).to_be_bytes())?;
         output.write_all(&response)?;
         output.flush()?;
-        if should_exit { break; }
+        if should_exit {
+            break;
+        }
     }
     Ok(())
 }

@@ -7,13 +7,14 @@ import { once } from 'node:events';
 import assert from 'node:assert/strict';
 const shellConfig = mkdtempSync(join(tmpdir(), 'window-browser-'));
 writeFileSync(join(shellConfig, '.zshrc'), "PROMPT='WINDOW> '\nunset HISTFILE\n");
-const server = spawn('mix', ['run', '--no-halt'], {cwd: new URL('..', import.meta.url), env: {...process.env, WINDOW_SERVER:'1',WINDOW_PORT:'4051',SHELL:'/bin/zsh',ZDOTDIR:shellConfig,MIX_REBAR3:process.env.MIX_REBAR3 || execFileSync('which',['rebar3'],{encoding:'utf8'}).trim()}, stdio:['ignore','pipe','pipe']});
+const server = spawn('mix', process.env.WINDOW_STORAGE_PROBE ? ['run', '--no-start', 'scripts/storage_browser_fixture.exs'] : ['run', '--no-halt'], {cwd: new URL('..', import.meta.url), env: {...process.env, WINDOW_DATA_DIR:join(shellConfig,'data'),WINDOW_SERVER:'1',WINDOW_PORT:'4051',SHELL:'/bin/zsh',ZDOTDIR:shellConfig,MIX_REBAR3:process.env.MIX_REBAR3 || execFileSync('which',['rebar3'],{encoding:'utf8'}).trim()}, stdio:['ignore','pipe','pipe']});
 let browser;
+let archiveLoadEvents = 0;
 try {
   const url = await new Promise((resolve,reject) => {
     const timer=setTimeout(()=>reject(new Error('Server startup timed out')),20000);
     let output='';
-    server.stdout.on('data',b=>{output+=b;const m=output.match(/http:\/\/127\.0\.0\.1:4051\/#token=[\w-]+/);if(m){clearTimeout(timer);resolve(m[0]);}});
+    server.stdout.on('data',b=>{output+=b;for(const match of output.matchAll(/ARCHIVE_LOAD_COMMITTED (\d+)/g)) archiveLoadEvents=Math.max(archiveLoadEvents, Number(match[1]));const m=output.match(/http:\/\/127\.0\.0\.1:4051\/#token=[\w-]+/);if(m){clearTimeout(timer);resolve(m[0]);}});
     server.on('exit',code=>{clearTimeout(timer);reject(new Error(`Server exited ${code}`));});
   });
   browser=await (process.env.WINDOW_BROWSER === 'firefox' ? firefox : chromium).launch();
@@ -30,8 +31,9 @@ try {
     });
   }
   let observedSize;
+  let echoObserver;
   page.on('websocket', ws => ws.on('framereceived', ({payload}) => {
-    try {const frame=JSON.parse(String(payload));if(frame[3]==='resized') observedSize=frame[4];} catch {}
+    try {const frame=JSON.parse(String(payload));if(frame[3]==='resized') observedSize=frame[4];if(frame[3]==='output') echoObserver?.(Buffer.from(frame[4].hex, 'hex').toString('utf8'));} catch {}
   }));
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(url);
@@ -44,7 +46,73 @@ try {
   await page.reload();await waitText('WINDOW>');
   assert.equal(await page.getByRole('tab').count(),1);
   assert.ok(!await page.getByRole('tab').innerText().then(t=>t.includes('Missing startup token')));
-  if (process.env.WINDOW_FONT_ONLY === '1') {
+  if (process.env.WINDOW_SHELF_ONLY === '1') {
+    await page.getByRole('button', {name:'Sessions',exact:true}).click();
+    await page.locator('.shelf-session').filter({hasText:'Terminal 1'}).click();
+    await page.getByRole('heading', {name:'Recent history'}).waitFor();
+    await page.locator('.shelf-timeline').getByText('created', {exact:true}).waitFor();
+    await page.getByRole('textbox',{name:'Session name'}).fill('Base camp <3');
+    await page.getByRole('button',{name:'Rename',exact:true}).click();
+    await page.getByRole('tab',{name:'Base camp <3',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Focus terminal',exact:true}).click();
+    await page.locator('#session-shelf').waitFor({state:'hidden'});
+    await type("printf 'SHELF_%s\\n' FOCUS"); await waitText('SHELF_FOCUS');
+    await page.reload(); await waitText('SHELF_FOCUS');
+    await page.getByRole('tab',{name:'Base camp <3',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Sessions',exact:true}).click();
+    await page.locator('.shelf-session').filter({hasText:'Base camp <3'}).click();
+    await page.getByRole('button',{name:'Create backup',exact:true}).click();
+    await page.getByText(/Backup complete:/).waitFor({timeout:30000});
+    await page.locator('.shelf-timeline').getByText('renamed', {exact:true}).waitFor();
+    await page.screenshot({path:`test-results/shelf-timeline-${process.env.WINDOW_BROWSER || 'chromium'}.png`});
+    await page.locator('.storage-status').locator('..').locator('summary').click();
+    await page.screenshot({path:`test-results/shelf-${process.env.WINDOW_BROWSER || 'chromium'}.png`});
+    await page.getByRole('button',{name:'Close session shelf',exact:true}).click();
+    await page.getByRole('button',{name:'Close Base camp <3',exact:true}).click();
+    assert.equal(await page.getByRole('tab').count(),0);
+    await page.getByRole('button',{name:'Sessions',exact:true}).click();
+    await page.locator('.shelf-session').filter({hasText:'Base camp <3'}).click();
+    await page.waitForFunction(() => document.querySelector('.shelf-detail>button')?.disabled);
+    assert.deepEqual(errors, []);
+    console.log('PASS: shelf lifecycle timeline, durable rename, live focus, refresh, backup and closed-session focus rejection');
+  } else if (process.env.WINDOW_STORAGE_PROBE === 'archive_outage' || process.env.WINDOW_STORAGE_PROBE === 'sqlite_outage') {
+    await type("printf 'OUTAGE_%s\\n' INPUT"); await waitText('OUTAGE_INPUT');
+    await page.getByRole('button',{name:'Sessions',exact:true}).click();
+    await page.locator('#session-shelf summary').first().filter({hasText:'attention needed'}).waitFor();
+    await page.locator('#session-shelf summary').first().click();
+    if (process.env.WINDOW_STORAGE_PROBE === 'archive_outage') {
+      await page.getByText(/Archive delayed:/).waitFor();
+      assert.match(await page.locator('.storage-status').innerText(), /Pending: [1-9]/);
+    } else await page.getByText(/Persistence: unavailable/).waitFor();
+    await page.screenshot({path:`test-results/${process.env.WINDOW_STORAGE_PROBE}.png`});
+    await page.getByRole('button',{name:'Close session shelf',exact:true}).click();
+    await type("printf 'STILL_%s\\n' USABLE"); await waitText('STILL_USABLE');
+    await page.getByRole('button',{name:'Close Terminal 1',exact:true}).click();
+    assert.equal(await page.getByRole('tab').count(),0);
+    assert.deepEqual(errors, []);
+    console.log(`PASS: ${process.env.WINDOW_STORAGE_PROBE}, visible failure, real terminal input and close remain usable`);
+  } else if (process.env.WINDOW_ECHO_ONLY === '1') {
+    const samples = [];
+    for (let i=0; i<45; i++) {
+      const marker = `ECHO_${i}_DONE`;
+      await page.locator('section:not([hidden]) textarea').focus();
+      await page.keyboard.insertText(`printf 'ECHO_%s\\n' '${i}_DONE'`);
+      let output = ''; let started;
+      const echoed = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Echo timed out')), 5000);
+        echoObserver = chunk => {output += chunk; if(output.includes(marker)) {clearTimeout(timer); resolve(performance.now() - started);}};
+      });
+      started = performance.now(); await page.keyboard.press('Enter');
+      const ms = await echoed; echoObserver = undefined; await waitText(marker);
+      if(i>=5) samples.push(ms);
+    }
+    samples.sort((a,b)=>a-b);
+    if(process.env.WINDOW_STORAGE_PROBE === 'load') assert.ok(archiveLoadEvents > 50, `Insufficient committed archive load: ${archiveLoadEvents}`);
+    const result = {mode:process.env.WINDOW_STORAGE_PROBE || 'baseline', archive_events:archiveLoadEvents, samples: samples.length, median_ms:samples[Math.floor(samples.length*.5)], p95_ms:samples[Math.ceil(samples.length*.95)-1], max_ms:samples.at(-1)};
+    writeFileSync(`test-results/echo-${result.mode}.json`, JSON.stringify(result,null,2));
+    console.log('ECHO', JSON.stringify(result));
+    assert.deepEqual(errors, []);
+  } else if (process.env.WINDOW_FONT_ONLY === '1') {
     const fontFaces = await page.evaluate(() => Array.from(document.fonts, font => ({family: font.family, status: font.status})));
     assert.ok(fontFaces.some(font => font.family.replaceAll('"', '') === 'Window Symbols' && font.status === 'loaded'), JSON.stringify(fontFaces));
     await type("printf 'BRANCH \\ue0a0 main\\n'");await waitText('BRANCH \ue0a0 main');

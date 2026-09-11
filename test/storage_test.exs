@@ -59,8 +59,14 @@ defmodule Window.StorageTest do
     {:ok, [event]} = SessionStore.request(:batch, @store)
     assert {:ok, _} = Archive.request(%{op: "append", events: [event]}, @archive)
     new = %{event | "id" => DB.uuid(), "session_id" => "two"}
-    conflict = %{event | "payload" => "different content"}
-    assert {:error, _} = Archive.request(%{op: "append", events: [new, conflict]}, @archive)
+    conflict = %{event | "kind" => "different kind"}
+    assert {:error, reason} = Archive.request(%{op: "append", events: [new, conflict]}, @archive)
+    assert reason =~ "identity conflict"
+
+    assert {:error, reason} =
+             Archive.request(%{op: "append", events: [%{event | "digest" => "wrong"}]}, @archive)
+
+    assert reason =~ "digest"
 
     assert {:error, _} =
              Archive.request(%{op: "append", events: [%{new | "schema_version" => 2}]}, @archive)
@@ -173,6 +179,13 @@ defmodule Window.StorageTest do
       Window.Storage.Restore.run!(backup, restored, "unused")
     end
 
+    {output, code} =
+      System.cmd(Path.expand("scripts/restore-storage"), [backup, restored <> "-cli"],
+        stderr_to_stdout: true
+      )
+
+    assert code == 0, output
+    assert output =~ "Restored and drained:"
     File.write!(Path.join(backup, "history.duckdb"), "corrupt")
 
     assert_raise RuntimeError, ~r/checksum/, fn ->
@@ -197,5 +210,104 @@ defmodule Window.StorageTest do
     assert {:error, reason} = ArchiveDrainer.drain(@store, @archive)
     assert reason =~ "identity"
     assert {:ok, [_]} = SessionStore.request(:batch, @store)
+  end
+
+  test "archive admission is bounded and drains after a blocked worker resumes" do
+    pid = Process.whereis(@archive)
+    :sys.suspend(pid)
+    tasks = for _ <- 1..16, do: Task.async(fn -> Archive.request(%{op: "status"}, @archive) end)
+
+    try do
+      wait_queue(@archive, 16)
+      assert {:error, reason} = Archive.request(%{op: "status"}, @archive)
+      assert reason =~ "admission"
+      assert %{queued: 16, rejected: 1} = Window.Storage.Admission.counts(@archive)
+    after
+      :sys.resume(pid)
+    end
+
+    for task <- tasks, do: assert({:ok, _} = Task.await(task, 15_000))
+    assert %{queued: 0} = Window.Storage.Admission.counts(@archive)
+  end
+
+  test "drainer pause quiesces delivery and owner death automatically resumes it" do
+    drainer =
+      start_supervised!(
+        {ArchiveDrainer, name: Window.TestDrainer, store: @store, archive: @archive}
+      )
+
+    parent = self()
+
+    owner =
+      spawn(fn ->
+        :ok = ArchiveDrainer.pause(drainer)
+        send(parent, :paused)
+
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    assert_receive :paused
+    {:ok, _} = record()
+    Process.sleep(350)
+    assert {:ok, [_]} = SessionStore.request(:batch, @store)
+    send(owner, :stop)
+    wait_drained(30)
+    assert {:ok, %{"events" => 1}} = Archive.request(%{op: "status"}, @archive)
+  end
+
+  test "backup queues new observations after its paired watermark" do
+    {:ok, _} = record("one", %{"state" => "exited"})
+    parent = self()
+
+    Application.put_env(:window, :backup_fault_hook, fn ->
+      send(parent, {:backup_paused, self()})
+
+      receive do
+        :continue -> :ok
+      after
+        5000 -> raise("test barrier timed out")
+      end
+    end)
+
+    on_exit(fn -> Application.delete_env(:window, :backup_fault_hook) end)
+    task = Task.async(fn -> SessionStore.backup(@archive, @store) end)
+    assert_receive {:backup_paused, store}, 2000
+    assert :ok = SessionStore.observe("one", "renamed", %{"name" => "After snapshot"}, @store)
+    assert %{queued: 2} = Window.Storage.Admission.counts(@store)
+    send(store, :continue)
+    assert {:ok, %{directory: directory, manifest: manifest}} = Task.await(task)
+    assert manifest.commit_watermark == 1
+    db = DB.open!(Path.join(directory, "current.sqlite"))
+    assert [[1]] = DB.query!(db, "SELECT revision FROM sessions")
+    assert [[1]] = DB.query!(db, "SELECT count(*) FROM outbox")
+    DB.close(db)
+
+    assert {:ok, [%{"revision" => 2, "name" => "After snapshot"}]} =
+             SessionStore.request(:list, @store)
+  end
+
+  defp wait_queue(server, count, attempts \\ 50)
+  defp wait_queue(_, _, 0), do: flunk("queue did not reach expected occupancy")
+
+  defp wait_queue(server, count, attempts) do
+    if Window.Storage.Admission.counts(server).queued != count do
+      Process.sleep(10)
+      wait_queue(server, count, attempts - 1)
+    end
+  end
+
+  defp wait_drained(0), do: flunk("drainer did not resume")
+
+  defp wait_drained(attempts) do
+    case SessionStore.request(:batch, @store) do
+      {:ok, []} ->
+        :ok
+
+      _ ->
+        Process.sleep(50)
+        wait_drained(attempts - 1)
+    end
   end
 end

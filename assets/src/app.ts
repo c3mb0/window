@@ -5,6 +5,7 @@ import { Socket, Channel } from 'phoenix';
 import roles from './theme.json';
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
+import { mountShelf } from './shelf';
 
 for (const [key, value] of Object.entries(roles)) document.documentElement.style.setProperty(`--${key}`, value);
 const theme = {
@@ -151,7 +152,7 @@ class Tab {
     if (!token) { this.state('Missing startup token — open the launcher URL'); return; }
     this.socket.connect();
     const channel = this.socket.channel(`terminal:${this.id}`, {rows: this.term.rows, cols: this.term.cols,
-      resume: !!snapshot, output_seq: this.outputSeq});
+      resume: !!snapshot, output_seq: this.outputSeq, name: this.label});
     this.channel = channel;
     channel.on('output', ({hex, seq}: {hex: string; seq: number}) => {
       if (this.disposed) return;
@@ -286,3 +287,10 @@ if (navigator.locks) {
   surface.textContent = 'This browser needs Web Locks support to open a terminal.';
   add.disabled = true;
 }
+
+mountShelf(token, id => tabs.some(t => t.id === id && !t.disposed && !t.ended), id => {
+  const tab = tabs.find(t => t.id === id); if (tab) activate(tab);
+}, (id, name) => {
+  const tab = tabs.find(t => t.id === id);
+  if (tab) {tab.label = name; tab.select.textContent = name; tab.close.setAttribute('aria-label', `Close ${name}`);}
+});

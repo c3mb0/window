@@ -6,4 +6,4 @@ if [[ $# != 2 ]]; then
   exit 2
 fi
 unset WINDOW_SERVER
-exec mix run --no-start scripts/restore-storage.exs -- "$@"
+exec mix run --no-start scripts/restore-storage.exs "$@"
