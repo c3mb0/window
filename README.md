@@ -9,7 +9,11 @@ make terminal
 
 Requires Git, Erlang/OTP 29+, Elixir 1.17+, rebar3, Rust 1.95 and Node/npm.
 The launcher initializes the pinned submodule, builds the helper and local assets,
-and prints a capability-bearing URL. Open that exact URL. The service listens on
+and opens a capability-bearing URL in Google Chrome on macOS (an installed
+Chrome/Chromium executable on Linux). It also prints that exact URL for manual
+opening. Set `WINDOW_OPEN_BROWSER=0` to skip opening the browser. The launcher
+does not install a browser; `make browser-check` installs a separate Playwright
+Chromium for tests. The service listens on
 **127.0.0.1:4050**; set `WINDOW_PORT` to change the port. Stop with Ctrl-C (twice if
 the BEAM break menu appears). First build needs network access for dependencies.
 

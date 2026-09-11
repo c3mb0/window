@@ -15,4 +15,5 @@ npm --prefix assets ci
 npm --prefix assets run build
 mix compile --warnings-as-errors
 export WINDOW_SERVER=1
+export WINDOW_OPEN_BROWSER="${WINDOW_OPEN_BROWSER:-1}"
 exec mix run --no-halt
