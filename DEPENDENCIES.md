@@ -17,6 +17,11 @@ and grants input to one attached Phoenix channel at a time, allowing a bounded
 refresh handoff without changing play's owner-bound API. Mix and npm
 lockfiles pin Phoenix, its transport dependencies, xterm.js and asset tooling.
 
+`phoenix_template` temporarily overrides Hex 1.0.4 with upstream commit
+`a5dd67cee1190bca4b7662ec3553373b5d67a0e6`, which fixes the Elixir 1.20
+bitstring-size pin warning in `unsuffix/2` (upstream PR #11). Return to a Hex
+release containing that fix when available. No dependency source is patched locally.
+
 window owns Phoenix, TypeScript/CSS, tab lifecycle, refresh snapshots and grace periods, local capability/origin policy,
 and the Signal theme adapter. play owns Erlang sessions and Rust Unix mechanisms.
 Future shared changes belong in play, followed by an explicit gitlink update here.

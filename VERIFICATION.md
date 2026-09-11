@@ -43,8 +43,9 @@ are created. Existing shell-owned history is outside window's recording policy.
   of silently losing part of the input. Resize and close bypass data credit.
 - Each tab uses its own WebSocket so a busy tab's transport queue does not block
   another. The server rejects frames over 32 KiB. No hostile-client stress claim.
-- Dependency `phoenix_template` emits an Elixir-1.20 bitstring deprecation warning
-  during its own compilation; window compiles with warnings-as-errors.
+- The `phoenix_template` Elixir-1.20 bitstring warning is fixed by the pinned
+  upstream revision recorded in DEPENDENCIES.md. Forced dependency compilation
+  and window compilation pass with warnings-as-errors.
 
 ## Bottom-row layout regression
 
