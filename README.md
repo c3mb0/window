@@ -19,8 +19,9 @@ the BEAM break menu appears). First build needs network access for dependencies.
 
 Each tab launches `$SHELL -il` in your home directory with the inherited environment
 and `TERM=xterm-256color`. macOS falls back to `/bin/zsh`. Your shell startup files
-and their own history policy still apply. window creates no input/output transcripts;
-scrollback is limited to 5,000 lines per tab. Assets and fonts stay local (system
+and their own history policy still apply. window creates no transcript files;
+scrollback is limited to 5,000 lines per tab. Refresh snapshots temporarily store
+that screen content in tab-scoped browser session storage. Assets and fonts stay local (system
 monospace text with a bundled Nerd Fonts Symbols Mono fallback for prompt icons).
 
 Switching tabs retains each screen and shell. An exited shell keeps its screen.
@@ -34,13 +35,28 @@ composer; plain Enter keeps its normal submit behavior.
 
 Browser heartbeats run every 10 seconds; the server permits 120 seconds of
 silence so idle shells do not race the heartbeat timer. Transport loss disables
-input and automatic reconnect. Existing sessions close
-2 seconds after server-side owner loss; a dead connection may first need the
-WebSocket timeout to be detected. Refresh opens a fresh shell; it does not restore old sessions. After opening the
-launcher URL once, the capability is retained in tab-scoped session storage so
-refresh keeps access. It is removed from the URL and changes when the server
-restarts. Open the new launcher URL after a server restart or in a new browser tab.
-If browser storage is unavailable, the URL fragment is retained instead.
+input and automatic reconnect. **Refresh reattaches the same PTYs**, retaining
+shell variables, working directories, foreground jobs, screens, tabs, and the
+active tab. A Web Lock gives the page exclusive browser ownership; session storage
+carries its reconnect IDs and xterm screen snapshots. Reload within **30 seconds**
+of server-side disconnect. The server keeps at most 256 KiB of recent output per
+terminal for replay and applies the existing 64 KiB output backpressure while
+disconnected. Unacknowledged input is never replayed.
+
+The terminal **×** closes its PTY immediately. Closing/navigating away from the
+browser page lets the 30-second grace expire; browsers cannot reliably distinguish
+that departure from refresh. A dead connection may first need the WebSocket
+timeout to be detected. This is refresh continuity, not persistence through server
+restarts, browser crashes, or expired sessions. Missing/expired server sessions
+show an error rather than silently substituting a new shell. Storage must be
+available with enough quota for the snapshot, and Web Locks must be supported.
+
+After opening the launcher URL once, the capability is retained in tab-scoped
+session storage. It is removed from the URL and changes when the server restarts.
+Open the new launcher URL after a server restart or in a new browser tab.
+If browser storage is unavailable, the URL fragment is retained, but refresh
+continuity is unavailable. A first reload from an older version of window still
+loses its old sessions: this behavior applies to sessions created by the new version.
 
 Closing sends terminal hangup to the owned shell group and current foreground
 job group, closes the PTY, then escalates those groups after 150 ms. This is **not

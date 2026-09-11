@@ -37,7 +37,7 @@ try {
   await page.goto(url);
   const active=()=>page.locator('section:not([hidden]) .xterm-screen');
   const waitText=async(text)=>{try {await page.waitForFunction(t=>document.querySelector('section:not([hidden]) .xterm-screen')?.textContent.includes(t),text,{timeout:10000});} catch(e) {console.error('SCREEN',await page.locator('body').innerText(),errors);throw e;}};
-  const type=async(cmd)=>{await page.locator('section:not([hidden]) textarea').focus();await page.keyboard.type(cmd);await page.keyboard.press('Enter');};
+  const type=async(cmd)=>{await page.locator('section:not([hidden])[data-connection="connected"]').waitFor();await page.locator('section:not([hidden]) textarea').focus();await page.keyboard.type(cmd);await page.keyboard.press('Enter');};
   await waitText('WINDOW>');
   assert.equal(await page.getByRole('tab').count(),1);
   assert.equal(new URL(page.url()).hash, '');
@@ -104,7 +104,45 @@ try {
     assert.deepEqual(errors,[]);
     console.log('PASS: both original shells accept input after idle; no disconnect observed');
   } else if (process.env.WINDOW_REFRESH_ONLY === '1') {
-    console.log('PASS: shell access survives page refresh without a URL token');
+    await type("REFRESH_PID=$$; REFRESH_VALUE=kept; cd /tmp; printf 'BEFORE_%s\\n' REFRESH");await waitText('BEFORE_REFRESH');
+    await page.getByRole('button',{name:'Open terminal'}).click();await waitText('WINDOW>');
+    await type("SECOND_PID=$$; printf 'SECOND_%s\\n' SCREEN");await waitText('SECOND_SCREEN');
+    await page.getByRole('tab',{name:'Terminal 1',exact:true}).click();
+    // Keep an actual foreground job across refresh, including its terminal screen.
+    await type('sh -c "printf \'FOREGROUND_%s\\n\' READY; exec sleep 30"');await waitText('FOREGROUND_READY');
+    await page.reload();await waitText('FOREGROUND_READY');
+    assert.equal(await page.getByRole('tab').count(), 2);
+    assert.equal(await page.getByRole('tab',{selected:true}).innerText(), 'Terminal 1');
+    await page.locator('section:not([hidden])[data-connection="connected"]').waitFor();
+    await page.locator('section:not([hidden]) textarea').focus();await page.keyboard.press('Control+c');
+    await type("test \"$REFRESH_PID\" = \"$$\" && test \"$REFRESH_VALUE\" = kept && test \"$PWD\" = /tmp && printf 'SAME_%s\\n' SHELL");await waitText('SAME_SHELL');
+    await page.getByRole('tab',{name:'Terminal 2',exact:true}).click();await waitText('SECOND_SCREEN');
+    await type("test \"$SECOND_PID\" = \"$$\" && printf 'SECOND_%s\\n' SAME");await waitText('SECOND_SAME');
+    await page.reload();await waitText('SECOND_SAME');
+    assert.equal(await page.getByRole('tab',{selected:true}).innerText(), 'Terminal 2');
+    await type("test \"$SECOND_PID\" = \"$$\" && printf 'TWICE_%s\\n' SAME");await waitText('TWICE_SAME');
+    const held = await page.evaluate(async () => (await navigator.locks.query()).held);
+    const owner = held.find(lock => lock.name.startsWith('window:')).name.slice('window:'.length);
+    const competing = await context.newPage();
+    await competing.goto(url);
+    await competing.locator('section[data-connection="connected"]').waitFor();
+    await competing.addInitScript(({owner, token}) => sessionStorage.setItem('window.refresh', JSON.stringify({owner, token, tabs: []})),
+      {owner, token: new URLSearchParams(new URL(url).hash.slice(1)).get('token')});
+    await competing.reload();
+    await competing.getByText('This terminal page is already open elsewhere.').waitFor();
+    assert.equal(await competing.getByRole('tab').count(), 0);
+    await competing.close();
+    await type("printf 'LOCK_%s\\n' OWNER");await waitText('LOCK_OWNER');
+    // Alternate-screen applications must restore their display and still receive input.
+    await type("printf '\\033[?1049h\\033[H\\033[2JALT_%s\\n' SCREEN; read -r reply; printf '\\033[?1049lBACK_%s\\n' NORMAL");
+    await waitText('ALT_SCREEN');await page.reload();await waitText('ALT_SCREEN');
+    await type('continue');await waitText('BACK_NORMAL');
+    await type('for i in $(seq 1 20); do printf \'STREAM_%03d\\n\' "$i"; sleep 0.05; done');
+    await waitText('STREAM_001');await page.reload();await waitText('STREAM_020');
+    const streamScreen = await active().innerText();
+    for (let n = 1; n <= 20; n++) assert.equal(streamScreen.split(`STREAM_${String(n).padStart(3, '0')}`).length - 1, 1);
+    assert.deepEqual(errors, []);
+    console.log('PASS: repeated refresh retains both PTYs, variables, cwd, screens, active tab, foreground job and alternate screen; Web Lock rejects competing page');
   } else {
   await type("printf 'FIRST_%s\\n' OK");await waitText('FIRST_OK');
   await page.getByRole('button',{name:'Open terminal'}).click();await waitText('WINDOW>');

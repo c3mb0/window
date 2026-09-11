@@ -13,7 +13,8 @@ version; product acceptance by the user remains separate from automated checks.
   independent absence check for a controlled foreground job after close.
 - window ExUnit: startup token rejection/acceptance, real PTY channel, resize,
   input sequence rejection, excess-credit rejection, close, survival for 61 seconds,
-  owner-loss grace/cleanup, and visible worker failure. Four tests pass (the failure-path test was added and run separately after the full three-test run).
+  owner-loss grace/cleanup, visible worker failure, same-worker refresh handoff,
+  idempotent replay credits, invalid-snapshot rejection, and expiry without replacement.
 - TypeScript checking and bundled local assets. npm audit reports zero findings
   for the installed lockfile at this checkpoint.
 - Chromium real-shell interaction: independent tabs, preserved screens, inactive
@@ -35,7 +36,8 @@ are created. Existing shell-owned history is outside window's recording policy.
 - Cleanup covers the shell group and sampled foreground group. Background and
   escaped descendants are not contained; cleanup event state is unverified.
 - A child may exit before its output holders. The tab reports exit immediately;
-  output drains under credits until EOF or explicit close. No detach or persistence.
+  output drains under credits until EOF or explicit close. Refresh handoff is bounded
+  to 30 seconds; there is no persistence through a server restart.
 - The browser has bounded queued input (64 KiB), a 64 KiB output-credit window and
   bounded scrollback per tab. Oversized queued paste disconnects visibly instead
   of silently losing part of the input. Resize and close bypass data credit.
@@ -53,15 +55,38 @@ Chromium pass at six viewport sizes: the final row, screen and scroll viewport
 remain inside the fitted panel with at least 8 px below it. Panel spacing uses
 positioning insets because FitAddon does not subtract parent padding.
 
-## Refresh access regression
+## Refresh continuity
 
-After opening the capability URL, Firefox and Chromium both open a fresh shell
-on reload after the URL fragment has been removed. The capability is retained
-in sessionStorage for that browser tab; shell sessions themselves are not resumed.
-Run `WINDOW_BROWSER=firefox WINDOW_REFRESH_ONLY=1 node assets/check.mjs` (omit
-WINDOW_BROWSER for Chromium). The broader Firefox run reached this check and the
-terminal/job-control checks, but its synthetic clipboard event did not deliver
-paste; that is not recorded as a native Firefox clipboard pass.
+`WINDOW_OPEN_BROWSER=0 WINDOW_REFRESH_ONLY=1 node assets/check.mjs` (also with
+`WINDOW_BROWSER=firefox`) checks repeated reloads of two PTYs. Shell PID variables,
+working directory, shell variables, retained screens, active-tab selection, a
+foreground sleep job, and an alternate-screen read survive the handoff. Streaming
+numbered output across reload checks for missing or duplicate rendered lines.
+A competing page seeded with the same page ownership ID is rejected by Web Locks.
+
+The window session process owns the unchanged play worker. Output carries a
+monotonic sequence, with 256 KiB of recent raw output retained in server memory.
+Rendered sequence acknowledgments replenish the original 64 KiB credit window;
+repeated acknowledgments after replay do not replenish it twice. Input acknowledgments
+remain connection-local and no unacknowledged input is replayed.
+
+ExUnit checks reconnect to the identical worker, credit idempotence, non-owner
+command rejection, invalid snapshot rejection, and expiration that closes the
+worker rather than creating a replacement. The expiry test uses a short configured
+grace; the production default is 30 seconds after detected channel loss. Explicit
+terminal close ends the session immediately.
+
+Screen snapshots use xterm's serialize addon and browser sessionStorage. They
+include scrollback, modes, and the alternate screen, but are not a durable PTY
+checkpoint or a byte-level snapshot of xterm's incomplete escape/UTF-8 parser state.
+Reload at an incomplete control-sequence boundary remains a limitation. Storage
+quota exhaustion, browser crashes without pagehide, and full Safari behavior are
+not claimed as supported refresh cases. Existing sessions created by the old
+channel-owned implementation cannot be migrated in place.
+
+The broader historical Firefox test reached terminal/job-control checks, but its
+synthetic clipboard event did not deliver paste; that is not recorded as a native
+Firefox clipboard pass.
 
 ## Idle browser connection regression
 

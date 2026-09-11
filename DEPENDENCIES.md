@@ -12,10 +12,12 @@ pin update. Its original tests and receipts remain in that repository.
 
 Mix uses `vendor/play/erlang/pty_lab` with rebar3. The launcher builds the external
 helper from that checkout with Cargo.lock. No backend source is copied into window,
-no company checkout is required, and there is no second PTY owner. Mix and npm
+no company checkout is required. A window-owned GenServer owns each PTY worker
+and grants input to one attached Phoenix channel at a time, allowing a bounded
+refresh handoff without changing play's owner-bound API. Mix and npm
 lockfiles pin Phoenix, its transport dependencies, xterm.js and asset tooling.
 
-window owns Phoenix, TypeScript/CSS, tab lifecycle, local capability/origin policy,
+window owns Phoenix, TypeScript/CSS, tab lifecycle, refresh snapshots and grace periods, local capability/origin policy,
 and the Signal theme adapter. play owns Erlang sessions and Rust Unix mechanisms.
 Future shared changes belong in play, followed by an explicit gitlink update here.
 

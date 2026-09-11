@@ -1,5 +1,6 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SerializeAddon } from '@xterm/addon-serialize';
 import { Socket, Channel } from 'phoenix';
 import roles from './theme.json';
 import '@xterm/xterm/css/xterm.css';
@@ -33,7 +34,25 @@ const token = (() => {
 const tabs: Tab[] = [];
 let active: Tab | undefined;
 let ordinal = 0;
+let leaving = false;
+const refreshKey = 'window.refresh';
+type SavedTab = {id: string; label: string; rows: number; cols: number; screen: string; outputSeq: number};
+type SavedPage = {token: string; owner: string; active: string | undefined; tabs: SavedTab[]};
+let saved: SavedPage | undefined;
+try {
+  const candidate = JSON.parse(sessionStorage.getItem(refreshKey) || 'null');
+  const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+  if (navigation?.type === 'reload' && candidate?.token === token && typeof candidate.owner === 'string' &&
+      Array.isArray(candidate.tabs) && candidate.tabs.every((t: SavedTab) =>
+        typeof t.id === 'string' && typeof t.label === 'string' && typeof t.screen === 'string' &&
+        Number.isInteger(t.outputSeq) && t.outputSeq >= 0 && t.rows >= 1 && t.rows <= 1000 && t.cols >= 2 && t.cols <= 1000)) saved = candidate;
+  sessionStorage.removeItem(refreshKey);
+} catch { /* Storage unavailable or invalid: start a fresh page. */ }
+const pageOwner = saved?.owner || crypto.randomUUID();
 class Tab {
+  id: string = crypto.randomUUID();
+  outputSeq = 0;
+  serializer = new SerializeAddon();
   term = new Terminal({theme, fontFamily: '"SFMono-Regular", Menlo, Monaco, "Window Symbols", monospace', fontSize: 14,
     lineHeight: 1.12, scrollback: 5000, cursorBlink: true, macOptionIsMeta: true,
     drawBoldTextInBrightColors: false, allowProposedApi: false,
@@ -49,6 +68,8 @@ class Tab {
   connected = false;
   disposed = false;
   ended = false;
+  restoring = false;
+  restoreSnapshot?: SavedTab;
   label = `Terminal ${++ordinal}`;
   inputQueue: Uint8Array[] = [];
   queuedBytes = 0;
@@ -72,6 +93,7 @@ class Tab {
     tabstrip.append(this.item);
     surface.append(this.pane);
     this.term.loadAddon(this.fit);
+    this.term.loadAddon(this.serializer);
     this.term.open(this.pane);
     this.socket = new Socket('/socket', {params: {token}, heartbeatIntervalMs: 10000, reconnectAfterMs: () => 86400000});
     this.socket.onError(() => this.disconnect());
@@ -111,17 +133,33 @@ class Tab {
       return true;
     });
   }
-  start() {
-    this.fit.fit();
+  async start(snapshot?: SavedTab) {
+    if (snapshot) {
+      this.restoring = true;
+      this.restoreSnapshot = snapshot;
+      this.id = snapshot.id;
+      this.label = snapshot.label;
+      this.select.textContent = this.label;
+      this.close.setAttribute('aria-label', `Close ${this.label}`);
+      this.outputSeq = snapshot.outputSeq;
+      this.term.resize(snapshot.cols, snapshot.rows);
+      await new Promise<void>(resolve => this.term.write(snapshot.screen, resolve));
+      this.restoring = false;
+      this.restoreSnapshot = undefined;
+    } else this.fit.fit();
+    if (this.disposed || leaving) return;
     if (!token) { this.state('Missing startup token — open the launcher URL'); return; }
     this.socket.connect();
-    const channel = this.socket.channel(`terminal:${crypto.randomUUID()}`, {rows: this.term.rows, cols: this.term.cols});
+    const channel = this.socket.channel(`terminal:${this.id}`, {rows: this.term.rows, cols: this.term.cols,
+      resume: !!snapshot, output_seq: this.outputSeq});
     this.channel = channel;
-    channel.on('output', ({hex}: {hex: string}) => {
+    channel.on('output', ({hex, seq}: {hex: string; seq: number}) => {
       if (this.disposed) return;
       const bytes = Uint8Array.from(hex.match(/../g) || [], x => parseInt(x, 16));
       this.term.write(bytes, () => {
-        if (!this.disposed && this.socket.isConnected()) channel.push('credit', {bytes: bytes.length});
+        if (this.disposed || leaving) return;
+        this.outputSeq = seq;
+        if (this.socket.isConnected()) channel.push('credit', {seq});
       });
     });
     channel.on('exited', ({code, signal}: {code: number | null; signal: number | null}) => {
@@ -130,9 +168,14 @@ class Tab {
     });
     channel.on('failed', ({reason}: {reason: string}) => { this.state(reason); this.disconnect(false); });
     channel.onError(() => this.disconnect());
-    channel.join().receive('ok', () => { if (!this.disposed) {this.connected = true; this.resize();} })
+    channel.join().receive('ok', () => { if (!this.disposed && !this.ended) {this.connected = true; this.pane.dataset.connection = 'connected'; this.resize();} })
       .receive('error', ({reason}: {reason: string}) => {this.state(reason); this.disconnect(false);})
       .receive('timeout', () => {this.state('Shell creation timed out'); this.disconnect(false);});
+  }
+  snapshot(): SavedTab {
+    if (this.restoreSnapshot) return this.restoreSnapshot;
+    return {id: this.id, label: this.label, rows: this.term.rows, cols: this.term.cols,
+      screen: this.serializer.serialize(), outputSeq: this.outputSeq};
   }
   state(message: string) {
     this.select.textContent = `${this.label} · ${message}`;
@@ -141,6 +184,7 @@ class Tab {
   disconnect(show = true) {
     if (this.disposed) return;
     this.connected = false;
+    this.pane.dataset.connection = 'disconnected';
     this.inputQueue = []; this.queuedBytes = 0;
     if (show && !this.ended) this.state('Disconnected');
     // No automatic rejoin, replacement shell, or buffered input replay.
@@ -167,7 +211,7 @@ class Tab {
       .receive('timeout', () => { this.state('Input delivery unknown — disconnected'); this.disconnect(false); });
   }
   resize() {
-    if (this.disposed || active !== this) return;
+    if (this.disposed || this.restoring || active !== this) return;
     this.fit.fit();
     if (this.connected) this.channel!.push('resize', {rows: this.term.rows, cols: this.term.cols});
   }
@@ -200,12 +244,19 @@ function remove(tab: Tab) {
     active?.term.focus();
   }
 }
-function create() {const tab = new Tab(); tabs.push(tab); activate(tab); tab.start();}
-add.onclick = create;
+function create(snapshot?: SavedTab) {const tab = new Tab(); tabs.push(tab); activate(tab); void tab.start(snapshot); return tab;}
+add.onclick = () => create();
 let resizeFrame = 0;
 new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => active?.resize()); }).observe(surface);
 window.addEventListener('offline', () => tabs.forEach(t => t.disconnect()));
-window.addEventListener('pagehide', () => tabs.forEach(t => t.socket.disconnect()));
+window.addEventListener('pagehide', () => {
+  leaving = true;
+  try {
+    const snapshot: SavedPage = {token, owner: pageOwner, active: active?.id, tabs: tabs.map(t => t.snapshot())};
+    sessionStorage.setItem(refreshKey, JSON.stringify(snapshot));
+  } catch { /* No usable snapshot: disconnected sessions expire after the grace period. */ }
+  tabs.forEach(t => t.socket.disconnect());
+});
 // Load the local icon fallback before xterm measures or draws the first prompt.
 try {
   const symbols = await new FontFace('Window Symbols', 'url("/assets/fonts/SymbolsNerdFontMono-Regular.ttf")').load();
@@ -214,4 +265,24 @@ try {
   console.warn('Terminal symbol font unavailable; using system font fallback');
 }
 await document.fonts.ready;
-create();
+function startPage() {
+  if (saved) {
+    for (const snapshot of saved.tabs) {
+      const number = Number(snapshot.label.match(/^Terminal (\d+)$/)?.[1]);
+      if (Number.isFinite(number)) ordinal = Math.max(ordinal, number - 1);
+      create(snapshot);
+    }
+    const selected = tabs.find(t => t.id === saved!.active);
+    if (selected) activate(selected);
+  } else create();
+}
+if (navigator.locks) {
+  void navigator.locks.request(`window:${pageOwner}`, {ifAvailable: true}, async lock => {
+    if (!lock) { surface.textContent = 'This terminal page is already open elsewhere.'; add.disabled = true; return; }
+    startPage();
+    await new Promise<void>(() => {}); // Browser releases ownership when this document goes away.
+  });
+} else {
+  surface.textContent = 'This browser needs Web Locks support to open a terminal.';
+  add.disabled = true;
+}

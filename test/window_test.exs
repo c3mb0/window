@@ -46,6 +46,82 @@ defmodule WindowTest do
     assert_push("failed", %{reason: "Session stopped"}, 3000)
   end
 
+  test "refresh reattaches the same worker and replay credits are idempotent" do
+    id = "terminal:refresh-#{System.unique_integer([:positive])}"
+    {:ok, socket} = connect(Window.Socket, %{"token" => "test-capability"})
+    {:ok, _, first} = subscribe_and_join(socket, id, %{"rows" => 24, "cols" => 80})
+    worker = first.assigns.worker
+    session = first.assigns.session
+    assert_push("output", %{seq: seq}, 3000)
+    ref = push(first, "credit", %{"seq" => seq})
+    assert_reply(ref, :ok)
+    ref = push(first, "credit", %{"seq" => seq})
+    assert_reply(ref, :ok)
+    assert {:error, :invalid_request} = Window.TerminalSession.call(session, :close)
+    Process.unlink(first.channel_pid)
+    close(first)
+    assert Process.alive?(worker)
+
+    {:ok, fresh} = connect(Window.Socket, %{"token" => "test-capability"})
+
+    {:ok, _, resumed} =
+      subscribe_and_join(fresh, id, %{
+        "rows" => 24,
+        "cols" => 80,
+        "resume" => true,
+        "output_seq" => 0
+      })
+
+    assert resumed.assigns.worker == worker
+    assert resumed.assigns.session == session
+    assert_push("output", %{seq: ^seq}, 3000)
+    ref = push(resumed, "input", %{"hex" => Base.encode16("echo refresh\n"), "seq" => 1})
+    assert_reply(ref, :ok)
+    ref = push(resumed, "close", %{})
+    assert_reply(ref, :ok)
+  end
+
+  test "refresh expiry closes the worker and never silently creates a replacement" do
+    Application.put_env(:window, :refresh_grace_ms, 150)
+    on_exit(fn -> Application.delete_env(:window, :refresh_grace_ms) end)
+    id = "expiry-#{System.unique_integer([:positive])}"
+    {:ok, socket} = connect(Window.Socket, %{"token" => "test-capability"})
+
+    {:ok, _, socket} =
+      subscribe_and_join(socket, "terminal:" <> id, %{"rows" => 24, "cols" => 80})
+
+    worker = socket.assigns.worker
+    session = socket.assigns.session
+    session_ref = Process.monitor(session)
+    worker_ref = Process.monitor(worker)
+    Process.unlink(socket.channel_pid)
+    close(socket)
+    assert_receive {:DOWN, ^session_ref, :process, ^session, _}, 2000
+    assert_receive {:DOWN, ^worker_ref, :process, ^worker, _}, 3500
+    assert {:error, :expired} = Window.TerminalSession.open(id, %{}, true)
+    assert [] = Registry.lookup(Window.Terminals, id)
+  end
+
+  test "invalid refresh sequence is rejected without replacing the live owner" do
+    id = "terminal:invalid-refresh-#{System.unique_integer([:positive])}"
+    {:ok, socket} = connect(Window.Socket, %{"token" => "test-capability"})
+    {:ok, _, first} = subscribe_and_join(socket, id, %{"rows" => 24, "cols" => 80})
+    {:ok, second} = connect(Window.Socket, %{"token" => "test-capability"})
+
+    assert {:error, _} =
+             subscribe_and_join(second, id, %{
+               "rows" => 24,
+               "cols" => 80,
+               "resume" => true,
+               "output_seq" => 1_000_000
+             })
+
+    ref = push(first, "input", %{"hex" => "0d", "seq" => 1})
+    assert_reply(ref, :ok)
+    ref = push(first, "close", %{})
+    assert_reply(ref, :ok)
+  end
+
   @tag timeout: 75_000
   test "interactive shell survives 60 seconds and owner loss closes after grace" do
     parent = self()
