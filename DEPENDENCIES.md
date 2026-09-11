@@ -1,7 +1,7 @@
 # Dependencies and repository boundary
 
 Backend: https://github.com/c3mb0/play.git, complete Git submodule at `vendor/play`.
-Current pin: **3963c301a31147c68acbc316c3f387d2b6fd90ea**.
+Current pin: **34e906212c3f2914f151cc8edda1f2a993bf0f6d**.
 Initial planning pin: a04bbb62f21290e8372ec788991c1926b924e0c0.
 
 The adopted revision adds an owner-bound, unrecorded interactive session API,
@@ -28,3 +28,7 @@ The ANSI mapping in `app.ts` is window's adapter: bright colors alias their base
 roles except brightBlack=dim; bold is independent of bright. 256-color/truecolor
 sequences remain application supplied. Signal is neither a build nor runtime
 dependency. No Signal source or shell configuration was modified.
+
+The current pin corrects interactive teardown to kill every discovered process
+group in the owned PTY session, including background jobs, without a HUP grace.
+This does not contain processes that deliberately daemonize into another session.

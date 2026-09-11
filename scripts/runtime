@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+# One SIGINT terminates the VM instead of opening its interactive break menu.
+exec elixir --erl "+Bd" -S mix run "$@"

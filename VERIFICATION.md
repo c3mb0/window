@@ -132,3 +132,22 @@ raw PTY bytes for Shift-Enter followed by Enter, verifies
 This verifies browser-to-PTY forwarding; the live Codex composer remains a manual
 acceptance check. Reloading window replaces its shell sessions, so this check
 does not refresh an existing user session.
+
+## SIGINT regression — 2026-09-11
+
+A terminal-backed BEAM probe stayed alive after SIGINT with default break
+handling; +Bd exited on the first signal. The old pinned helper also left a
+background job alive beyond2seconds in the real-VM test. The new helper's
+session-group sweep plus scripts/runtime passed direct-PID and process-group
+SIGINT, with15/14 observed PIDs absent in0.099/0.102seconds. Test failures have
+fixture-only cleanup; no project runtimes were alive before investigation.
+
+Rust fmt/clippy/workspace tests and Erlang EUnit7/xref passed in play. Initial
+Window suite6/7 hit a pre-existing assumption that a login shell spontaneously
+prints output. The refresh test now writes an explicit command before expecting
+output; focused replay passed. Final full-suite status recorded below.
+
+Final `make check` PASS: formatting, warnings-as-errors compilation, all7ExUnit
+checks (including61second session lifetime), TypeScript checking and asset build.
+Shell syntax and Python compilation passed. Final process inventory found no
+BEAM or pty_helper processes. Window was left stopped for the operator's retry.

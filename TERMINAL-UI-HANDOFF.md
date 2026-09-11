@@ -218,3 +218,21 @@ LiveView diffing of terminal content. No second PTY owner in the frontend layer.
 Repository setup began with license and planning documents only. The application,
 submodule/build wiring and local theme snapshot are now implemented; current
 verification evidence is recorded in VERIFICATION.md.
+
+## SIGINT follow-up (2026-09-11)
+
+User required one host SIGINT to terminate Window and owned terminal jobs.
+Reproduced default BEAM break-menu survival with a real TTY and old helper's
+background-job survivor. `scripts/runtime` now uses +Bd; `scripts/terminal` execs
+it. Play34e9062 sweeps all discovered owned PTY session groups with immediate
+SIGKILL; window pins that revision. Direct and group SIGINT regression passes
+(~0.1s,2s test ceiling), full make check7/7 + TS/build passes. Test startup now
+requests output rather than assuming the user's login shell prints a prompt.
+
+No matching runtimes existed at initial inventory; temporary regression processes
+were cleaned, and final inventory is empty. No mic/system settings changed.
+Window remains stopped. Retry `make terminal`; Ctrl-C on its host terminal stops
+it. Browser-terminal Ctrl-C remains the foreground application's interrupt.
+Detached daemon sessions and remote side effects are outside this cleanup scope;
+do not call this universal process containment. See VERIFICATION.md and the
+executable scripts/check_sigint.py fixture. Existing receipts remain preserved.

@@ -14,3 +14,7 @@ browser-check:
 	npm --prefix assets run build
 	npx --prefix assets playwright install chromium
 	node assets/check.mjs
+
+.PHONY: shutdown-check
+shutdown-check:
+	python3 scripts/check_sigint.py

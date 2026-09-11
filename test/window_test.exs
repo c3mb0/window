@@ -52,6 +52,11 @@ defmodule WindowTest do
     {:ok, _, first} = subscribe_and_join(socket, id, %{"rows" => 24, "cols" => 80})
     worker = first.assigns.worker
     session = first.assigns.session
+    # Generate output explicitly: login-shell startup is not a readiness signal.
+    input =
+      push(first, "input", %{"hex" => Base.encode16("printf 'REPLAY_CHECK\\n'\n"), "seq" => 1})
+
+    assert_reply(input, :ok)
     assert_push("output", %{seq: seq}, 3000)
     ref = push(first, "credit", %{"seq" => seq})
     assert_reply(ref, :ok)

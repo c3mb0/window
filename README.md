@@ -77,3 +77,19 @@ be on PATH). See [verification and remaining manual checks](VERIFICATION.md).
 
 [Backend pin and repository boundary](DEPENDENCIES.md) ·
 [Original implementation scope](TERMINAL-UI-HANDOFF.md) · [MIT license](LICENSE)
+
+## Operator stop
+
+One Ctrl-C/SIGINT on the running launcher now terminates BEAM without opening
+its break menu (`scripts/runtime`, `+Bd`). Closing its helper pipes tears down
+all discovered process groups in each owned PTY session, including background
+jobs ignoring HUP/TERM. Teardown uses SIGKILL, so those jobs do not get a chance
+to save work. Ctrl-C *inside a browser terminal* still belongs to that terminal's
+foreground program; it is not the host application's kill switch.
+
+`make shutdown-check` runs a real VM with foreground/background PTY jobs and
+asserts that its tracked process tree disappears after direct and group SIGINT.
+Observed local cleanup was approximately0.1seconds; the regression ceiling is
+2seconds. This is not literal zero-time termination, remote-service cancellation,
+or containment of a program deliberately escaping into another daemon session.
+The browser itself is not owned by this launcher and is not killed.
