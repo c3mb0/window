@@ -44,7 +44,14 @@ try {
   await page.reload();await waitText('WINDOW>');
   assert.equal(await page.getByRole('tab').count(),1);
   assert.ok(!await page.getByRole('tab').innerText().then(t=>t.includes('Missing startup token')));
-  if (process.env.WINDOW_KEYS_ONLY === '1') {
+  if (process.env.WINDOW_FONT_ONLY === '1') {
+    const fontFaces = await page.evaluate(() => Array.from(document.fonts, font => ({family: font.family, status: font.status})));
+    assert.ok(fontFaces.some(font => font.family.replaceAll('"', '') === 'Window Symbols' && font.status === 'loaded'), JSON.stringify(fontFaces));
+    await type("printf 'BRANCH \\ue0a0 main\\n'");await waitText('BRANCH \ue0a0 main');
+    await page.screenshot({path:`test-results/font-${process.env.WINDOW_BROWSER || 'chromium'}.png`});
+    assert.deepEqual(errors, []);
+    console.log('PASS: local symbol font loaded and Git branch prompt rendered');
+  } else if (process.env.WINDOW_KEYS_ONLY === '1') {
     // Observe actual PTY bytes, including duplicate keypress/keyup delivery.
     await type("stty raw -echo; printf 'KEY_%s\\n' READY; dd bs=1 count=8 2>/dev/null | od -An -tx1; stty sane");
     await waitText('KEY_READY');

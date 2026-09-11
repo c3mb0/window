@@ -8,7 +8,7 @@ defmodule Window.Endpoint do
   )
 
   plug(:boundary)
-  plug(Plug.Static, at: "/assets", from: {:window, "priv/static"}, only: ~w(app.js app.css))
+  plug(Plug.Static, at: "/assets", from: {:window, "priv/static"}, only: ~w(app.js app.css fonts))
   plug(:page)
 
   defp boundary(conn, _) do

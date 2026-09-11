@@ -34,7 +34,7 @@ const tabs: Tab[] = [];
 let active: Tab | undefined;
 let ordinal = 0;
 class Tab {
-  term = new Terminal({theme, fontFamily: '"SFMono-Regular", Menlo, Monaco, monospace', fontSize: 14,
+  term = new Terminal({theme, fontFamily: '"SFMono-Regular", Menlo, Monaco, "Window Symbols", monospace', fontSize: 14,
     lineHeight: 1.12, scrollback: 5000, cursorBlink: true, macOptionIsMeta: true,
     drawBoldTextInBrightColors: false, allowProposedApi: false,
     // Links remain text: no hyperlink addon or OSC 8 handler that opens a URL.
@@ -206,5 +206,12 @@ let resizeFrame = 0;
 new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => active?.resize()); }).observe(surface);
 window.addEventListener('offline', () => tabs.forEach(t => t.disconnect()));
 window.addEventListener('pagehide', () => tabs.forEach(t => t.socket.disconnect()));
+// Load the local icon fallback before xterm measures or draws the first prompt.
+try {
+  const symbols = await new FontFace('Window Symbols', 'url("/assets/fonts/SymbolsNerdFontMono-Regular.ttf")').load();
+  document.fonts.add(symbols);
+} catch {
+  console.warn('Terminal symbol font unavailable; using system font fallback');
+}
 await document.fonts.ready;
 create();

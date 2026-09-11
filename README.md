@@ -21,7 +21,7 @@ Each tab launches `$SHELL -il` in your home directory with the inherited environ
 and `TERM=xterm-256color`. macOS falls back to `/bin/zsh`. Your shell startup files
 and their own history policy still apply. window creates no input/output transcripts;
 scrollback is limited to 5,000 lines per tab. Assets and fonts stay local (system
-monospace fallback; no bundled font).
+monospace text with a bundled Nerd Fonts Symbols Mono fallback for prompt icons).
 
 Switching tabs retains each screen and shell. An exited shell keeps its screen.
 Closing the last tab leaves **+**. Ctrl-C always goes to the terminal, including
