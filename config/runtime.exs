@@ -1,6 +1,16 @@
 import Config
 
 if System.get_env("WINDOW_SERVER") == "1" do
+  config :window, :storage_enabled, System.get_env("WINDOW_STORAGE") != "0"
+
+  config :window,
+         :storage_directory,
+         System.get_env("WINDOW_DATA_DIR") || :filename.basedir(:user_data, "window")
+
+  config :window,
+         :outbox_limit,
+         String.to_integer(System.get_env("WINDOW_OUTBOX_LIMIT_BYTES", "67108864"))
+
   port = String.to_integer(System.get_env("WINDOW_PORT", "4050"))
   token = Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
   origin = "http://127.0.0.1:#{port}"
@@ -16,3 +26,7 @@ if System.get_env("WINDOW_SERVER") == "1" do
 end
 
 config :window, :helper, Path.expand("../vendor/play/target/debug/pty_helper", __DIR__)
+
+config :window,
+       :archive_helper,
+       Path.expand("../native/archive/target/debug/window-archive", __DIR__)

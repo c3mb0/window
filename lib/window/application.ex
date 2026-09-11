@@ -2,12 +2,12 @@ defmodule Window.Application do
   use Application
 
   def start(_type, _args) do
-    children = [
-      {Phoenix.PubSub, name: Window.PubSub},
-      {Registry, keys: :unique, name: Window.Terminals},
-      {DynamicSupervisor, strategy: :one_for_one, name: Window.TerminalSupervisor},
-      Window.Endpoint
-    ]
+    children =
+      [
+        {Phoenix.PubSub, name: Window.PubSub},
+        {Registry, keys: :unique, name: Window.Terminals},
+        {DynamicSupervisor, strategy: :one_for_one, name: Window.TerminalSupervisor}
+      ] ++ storage_children() ++ [Window.Endpoint]
 
     result = Supervisor.start_link(children, strategy: :one_for_one, name: Window.Supervisor)
 
@@ -21,6 +21,27 @@ defmodule Window.Application do
     end
 
     result
+  end
+
+  defp storage_children do
+    if Application.get_env(:window, :storage_enabled, false) do
+      directory = Application.fetch_env!(:window, :storage_directory)
+      runtime = Window.Storage.Database.uuid()
+
+      [
+        {Window.SessionStore,
+         file: Path.join(directory, "current.sqlite"),
+         runtime: runtime,
+         outbox_limit: Application.get_env(:window, :outbox_limit, 67_108_864)},
+        {Window.Storage.DiskSpace, directory},
+        {Window.Archive,
+         file: Path.join(directory, "history.duckdb"),
+         helper: Application.fetch_env!(:window, :archive_helper)},
+        {Window.ArchiveDrainer, []}
+      ]
+    else
+      []
+    end
   end
 
   defp open_browser(url) do

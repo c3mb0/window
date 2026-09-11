@@ -17,6 +17,7 @@ defmodule Window.MixProject do
        override: true},
       {:bandit, "~> 1.0"},
       {:jason, "~> 1.4"},
+      {:exqlite, "== 0.40.0"},
       {:pty_lab, path: "vendor/play/erlang/pty_lab", manager: :rebar3}
     ]
   end

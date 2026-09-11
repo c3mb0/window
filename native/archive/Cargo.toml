@@ -1,0 +1,17 @@
+[package]
+name = "window-archive"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+duckdb = "=1.10505.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false

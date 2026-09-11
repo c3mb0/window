@@ -9,6 +9,7 @@ fi
 export MIX_REBAR3="$(command -v rebar3)"
 git submodule update --init --recursive
 cargo build --manifest-path vendor/play/Cargo.toml --locked
+./scripts/build-archive
 mix deps.get
 mix deps.compile
 npm --prefix assets ci

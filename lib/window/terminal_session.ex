@@ -34,10 +34,20 @@ defmodule Window.TerminalSession do
       {:ok, worker} ->
         monitor = Process.monitor(worker)
         timer = expiry_timer()
+        id = options.identity["session"]
+
+        Window.SessionStore.observe(id, "created", %{
+          "state" => "starting",
+          "name" => Map.get(options, :name, "Terminal"),
+          "launch_cwd" => options.spec["cwd"],
+          "reason" => "PTY worker created"
+        })
 
         {:ok,
          %{
            worker: worker,
+           id: id,
+           attached_once: false,
            worker_monitor: monitor,
            owner: nil,
            owner_monitor: nil,
@@ -79,8 +89,22 @@ defmodule Window.TerminalSession do
       if state.ended,
         do: send(owner, {:terminal_event, elem(state.ended, 0), elem(state.ended, 1)})
 
+      unless state.ended,
+        do:
+          Window.SessionStore.observe(
+            state.id,
+            if(state.attached_once, do: "reattached", else: "attached"),
+            %{"state" => "live", "reason" => "browser attached"}
+          )
+
       {:reply, {:ok, state.worker},
-       %{state | owner: owner, owner_monitor: Process.monitor(owner), timer: nil}}
+       %{
+         state
+         | owner: owner,
+           owner_monitor: Process.monitor(owner),
+           timer: nil,
+           attached_once: true
+       }}
     end
   end
 
@@ -99,8 +123,22 @@ defmodule Window.TerminalSession do
     end
   end
 
-  def handle_call(:close, {owner, _}, %{owner: owner} = state),
-    do: {:stop, :normal, :ok, state}
+  def handle_call(:close, {owner, _}, %{owner: owner} = state) do
+    Window.SessionStore.observe(state.id, "close_requested", %{
+      "state" => "close_requested",
+      "reason" => "terminal close requested"
+    })
+
+    {:stop, :normal, :ok, state}
+  end
+
+  def handle_call(:runtime_status, _, state),
+    do:
+      {:reply,
+       %{
+         live: is_nil(state.ended) && Process.alive?(state.worker),
+         attached: !is_nil(state.owner)
+       }, state}
 
   def handle_call(_, _, state), do: {:reply, {:error, :invalid_request}, state}
 
@@ -131,15 +169,16 @@ defmodule Window.TerminalSession do
     end
   end
 
-  def handle_info({:DOWN, ref, :process, _, _}, %{owner_monitor: ref} = state),
-    do:
-      {:noreply,
-       %{
-         state
-         | owner: nil,
-           owner_monitor: nil,
-           timer: expiry_timer()
-       }}
+  def handle_info({:DOWN, ref, :process, _, _}, %{owner_monitor: ref} = state) do
+    unless state.ended,
+      do:
+        Window.SessionStore.observe(state.id, "detached", %{
+          "state" => "detached",
+          "reason" => "channel disconnected"
+        })
+
+    {:noreply, %{state | owner: nil, owner_monitor: nil, timer: expiry_timer()}}
+  end
 
   def handle_info({:DOWN, ref, :process, _, _}, %{worker_monitor: ref} = state),
     do: finish(state, "failed", %{reason: "Session stopped"})
@@ -150,14 +189,24 @@ defmodule Window.TerminalSession do
   def handle_info({:interactive_failure, _, _}, state),
     do: finish(state, "failed", %{reason: "PTY connection failed"})
 
-  def handle_info({:expire, generation}, %{owner: nil, timer: {_, generation}} = state),
-    do: {:stop, :normal, state}
+  def handle_info({:expire, generation}, %{owner: nil, timer: {_, generation}} = state) do
+    Window.SessionStore.observe(state.id, "refresh_expired", %{
+      "state" => "expired",
+      "reason" => "refresh grace elapsed; cleanup requested"
+    })
+
+    {:stop, :normal, state}
+  end
 
   def handle_info(_, state), do: {:noreply, state}
 
   def terminate(_, state) do
     if Process.alive?(state.worker),
       do: :pty_session.interactive_command(state.worker, %{"command" => "close"})
+
+    Window.SessionStore.observe(state.id, "owner_stopped", %{
+      "reason" => "session owner stopped; child cleanup not independently observed"
+    })
 
     :ok
   end
@@ -185,6 +234,17 @@ defmodule Window.TerminalSession do
   defp emit(state, event, data), do: send(state.owner, {:terminal_event, event, data})
 
   defp finish(%{ended: nil} = state, event, data) do
+    Window.SessionStore.observe(
+      state.id,
+      if(event == "exited", do: "child_exited", else: "session_failed"),
+      %{
+        "state" => if(event == "exited", do: "exited", else: "failed"),
+        "reason" => Map.get(data, :reason, "child exit observed"),
+        "exit_code" => Map.get(data, "code", Map.get(data, :code)),
+        "signal" => Map.get(data, "signal", Map.get(data, :signal))
+      }
+    )
+
     emit(state, event, data)
     {:noreply, %{state | ended: {event, data}}}
   end

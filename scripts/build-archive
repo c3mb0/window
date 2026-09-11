@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/../native/archive"
+# The pinned duckdb-rs crate downloads the matching official DuckDB library.
+# Avoid compiling several GiB of C++ debug objects for the local helper.
+export DUCKDB_DOWNLOAD_LIB=1
+exec cargo build --locked "$@"

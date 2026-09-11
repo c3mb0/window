@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+if [[ $# != 2 ]]; then
+  echo 'Usage: scripts/restore-storage BACKUP_DIRECTORY NEW_DATA_DIRECTORY' >&2
+  exit 2
+fi
+unset WINDOW_SERVER
+exec mix run --no-start scripts/restore-storage.exs -- "$@"

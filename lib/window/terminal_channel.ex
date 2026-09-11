@@ -25,6 +25,8 @@ defmodule Window.TerminalChannel do
     }
 
     options = %{
+      name:
+        if(is_binary(params["name"]), do: String.slice(params["name"], 0, 80), else: "Terminal"),
       helper: Application.fetch_env!(:window, :helper) |> String.to_charlist(),
       identity: %{"experiment" => "window", "cell" => "interactive", "session" => id},
       spec: spec
